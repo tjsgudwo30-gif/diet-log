@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { addDays, isDateKey, shortLabel, weekdayKo } from "@/lib/date";
-import { weeklyStats, windowAverage, type DietStore } from "@/lib/store";
+import { hasDayRecord, weeklyStats, windowAverage, type DietStore } from "@/lib/store";
 import { MAIN_CATEGORIES, type AppData } from "@/lib/types";
 import { Syringe } from "lucide-react";
 import { AnimatedNumber, Cell, Dot, Label } from "./ui";
@@ -152,8 +152,20 @@ export function TrendChart({
   const change = hasData ? last - first : 0;
 
   const goal = data.goalWeight;
-  const lo = Math.floor(Math.min(min, goal >= min - 1.5 ? goal : min) - 0.5);
-  const hi = Math.ceil(max + 0.5);
+  // Y domain: cover every plotted value (weights *and* the 7-day average line, which can sit
+  // outside the weigh-in range at the edges), include the goal when it is within 1.5 kg of the
+  // data on either side, pad 0.5 kg, snap to whole kg, and never collapse below a 2 kg span.
+  const plotted = [...values, ...series.map((p) => p.ma7).filter((v): v is number => v !== null)];
+  const pMin = plotted.length ? Math.min(...plotted) : 0;
+  const pMax = plotted.length ? Math.max(...plotted) : 0;
+  const goalNear = goal >= pMin - 1.5 && goal <= pMax + 1.5;
+  let lo = Math.floor(Math.min(pMin, goalNear ? goal : pMin) - 0.5);
+  let hi = Math.ceil(Math.max(pMax, goalNear ? goal : pMax) + 0.5);
+  if (hi - lo < 2) {
+    const mid = (hi + lo) / 2;
+    lo = Math.floor(mid - 1);
+    hi = Math.ceil(mid + 1);
+  }
   const weekly = useMemo(() => weeklyStats(data, selected), [data, selected]);
   const injDays = series.filter((p) => p.inj).map((p) => p.key);
   const weighIns = series.filter((p) => p.weight !== null);
@@ -263,8 +275,10 @@ export function TrendChart({
                 data={series}
                 margin={{ top: 12, right: 20, bottom: 0, left: 0 }}
                 onClick={(state) => {
+                  // only jump to days that actually have something recorded — clicking the gap
+                  // between weigh-ins no longer lands on an empty day
                   const k = resolveKey(state, series);
-                  if (k) onSelect(k);
+                  if (k && hasDayRecord(data, k)) onSelect(k);
                 }}
               >
                 <XAxis

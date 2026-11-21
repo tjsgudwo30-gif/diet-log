@@ -106,7 +106,7 @@ export function Header({
 
       {/* Date navigation */}
       <div
-        className={`relative col-span-6 flex flex-col justify-between gap-3 px-4 py-3 md:col-span-4 md:col-start-6 md:row-start-1 md:px-6 md:pt-5 md:pb-4 ${calendarOpen ? "z-30" : ""}`}
+        className={`relative col-span-6 flex flex-col justify-between gap-3 px-4 py-3 md:col-span-4 md:col-start-6 md:row-start-1 md:px-6 md:pt-5 md:pb-4 ${calendarOpen ? "z-50" : ""}`}
       >
         <div className="hidden items-center justify-between md:flex">
           <Label>기록 날짜</Label>

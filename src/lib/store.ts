@@ -59,6 +59,34 @@ export function appendNoteToken(note: string, token: string): AppendNoteResult {
   return { ok: true, next };
 }
 
+/* ---------- Day normalisation ---------- */
+
+/**
+ * Drops empty log arrays, an undefined weight and an empty note.
+ * Returns null when nothing is left, so callers can remove the day instead of storing `{ logs: {} }`.
+ */
+export function normalizeDay(d: DayEntry): DayEntry | null {
+  const logs: DayEntry["logs"] = {};
+  for (const [cat, list] of Object.entries(d.logs) as [Category, LogItem[] | undefined][]) {
+    if (list && list.length) logs[cat] = list;
+  }
+  const out: DayEntry = { logs };
+  if (d.weight !== undefined && Number.isFinite(d.weight)) out.weight = d.weight;
+  if (d.note) out.note = d.note;
+  return out.weight === undefined && !out.note && !Object.keys(logs).length ? null : out;
+}
+
+/** Merges two entries for the same day: `b` wins for weight/note, logs are concatenated (deduped by id). */
+function mergeDays(a: DayEntry, b: DayEntry): DayEntry {
+  const logs: DayEntry["logs"] = {};
+  for (const cat of CATEGORY_KEYS) {
+    const seen = new Set<string>();
+    const list = [...(a.logs[cat] ?? []), ...(b.logs[cat] ?? [])].filter((l) => !seen.has(l.id) && seen.add(l.id));
+    if (list.length) logs[cat] = list;
+  }
+  return { weight: b.weight ?? a.weight, note: b.note || a.note, logs };
+}
+
 /* ---------- Load (corruption-safe) ---------- */
 
 /**
@@ -148,10 +176,15 @@ export function useDietStore() {
     }
   }, [data, ready]);
 
+  /** Applies `fn` to a day, then normalises it: a day left with nothing in it is removed. */
   const updateDay = useCallback((key: string, fn: (d: DayEntry) => DayEntry) => {
     setData((prev) => {
       const cur = prev.days[key] ?? { logs: {} };
-      return { ...prev, days: { ...prev.days, [key]: fn(cur) } };
+      const next = normalizeDay(fn(cur));
+      const days = { ...prev.days };
+      if (next) days[key] = next;
+      else delete days[key];
+      return { ...prev, days };
     });
   }, []);
 
@@ -184,7 +217,8 @@ export function useDietStore() {
         const list = d.logs[cat] ?? [];
         const last = list[list.length - 1];
         if (cat === "injection" && last) {
-          if (last.text.includes(t)) return d;
+          // exact " · " segment match: "0.5mg" is not a duplicate of "위고비0.5mg"
+          if (noteTokens(last.text).includes(t)) return d;
           const merged = { ...last, text: `${last.text} · ${t}`.slice(0, 500) };
           return { ...d, logs: { ...d.logs, [cat]: [...list.slice(0, -1), merged] } };
         }
@@ -265,7 +299,18 @@ export function useDietStore() {
 
   /** Puts a previously cleared day back (undo for clearDay). */
   const restoreDay = useCallback(
-    (key: string, entry: DayEntry) => setData((prev) => ({ ...prev, days: { ...prev.days, [key]: entry } })),
+    (key: string, entry: DayEntry) =>
+      setData((prev) => {
+        // If something was recorded on that day after the delete, merge instead of overwriting it:
+        // current weight/note win, logs from both are kept (restored ones first).
+        const cur = prev.days[key];
+        const merged = cur ? mergeDays(entry, cur) : entry;
+        const next = normalizeDay(merged);
+        const days = { ...prev.days };
+        if (next) days[key] = next;
+        else delete days[key];
+        return { ...prev, days };
+      }),
     []
   );
 
@@ -456,8 +501,11 @@ export interface WeeklyStats {
 
 /** 7-day average weight at `selected` and its change vs. the preceding 7 days (Δ 7D AVG). */
 export function weeklyStats(data: AppData, selected: string): WeeklyStats {
-  const current = windowAverage(data, selected, 7);
-  const previous = windowAverage(data, addDays(selected, -7), 7);
+  // Averages are rounded to the 0.1 kg shown on screen *before* taking the delta,
+  // so "69.9 · 이전 7일 대비 −1.5" always adds up visually (71.4 − 69.9).
+  const r = (w: { avg: number; count: number } | null) => (w ? { avg: round1(w.avg), count: w.count } : null);
+  const current = r(windowAverage(data, selected, 7));
+  const previous = r(windowAverage(data, addDays(selected, -7), 7));
   const delta = current && previous ? round1(current.avg - previous.avg) : null;
   return { current, previous, delta };
 }
@@ -475,4 +523,14 @@ export function lastInjection(
   if (!k) return null;
   const list = data.days[k].logs.injection!;
   return { key: k, text: list[list.length - 1].text, daysAgo: diffDays(k, key) };
+}
+
+/** Most recent day with any record, preferring days up to today (future-dated entries only as a fallback). */
+export function latestRecordKey(data: AppData): string | null {
+  const today = todayKey();
+  const keys = Object.keys(data.days)
+    .filter((k) => hasAnything(data.days[k]))
+    .sort();
+  const past = keys.filter((k) => k <= today);
+  return past[past.length - 1] ?? keys[keys.length - 1] ?? null;
 }

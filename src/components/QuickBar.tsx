@@ -83,10 +83,16 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
   const [justSaved, setJustSaved] = useState(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** Short status line under the chips (duplicate / length limit); auto-clears. */
+  const [hint, setHint] = useState<{ text: string; warn: boolean } | null>(null);
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // A new day starts clean: no half-typed weight, memo text or status hint from the previous day.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- drop a stale draft when the day changes
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset per-day drafts when the day changes
     setDraft(null);
+    setText("");
+    setHint(null);
   }, [selected]);
 
   // Never leave a pending timer behind after unmount.
@@ -113,9 +119,6 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
     if (v !== null) setWeight(selected, v);
     setDraft(null);
   };
-  /** Short status line under the chips (duplicate / length limit); auto-clears. */
-  const [hint, setHint] = useState<{ text: string; warn: boolean } | null>(null);
-  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
       if (hintTimer.current) clearTimeout(hintTimer.current);

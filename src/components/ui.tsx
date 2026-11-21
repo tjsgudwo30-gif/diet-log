@@ -32,7 +32,7 @@ export function AnimatedNumber({
   });
 
   return (
-    <span ref={ref} className={className}>
+    <span ref={ref} className={`tabular-nums ${className ?? ""}`}>
       {fmt(value)}
     </span>
   );

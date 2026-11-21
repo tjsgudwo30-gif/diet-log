@@ -64,6 +64,7 @@ function GroupCaption({ letter, title, hint, summary }: { letter: string; title:
 
 export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; selected: string; pulse?: number }) {
   const isToday = selected === todayKey();
+  const undoState = useClearDayUndo(store);
   const day = store.data.days[selected];
   const n = (keys: Category[]) => keys.reduce((acc, k) => acc + (day?.logs[k]?.length ?? 0), 0);
   const meals = n(["breakfast", "lunch", "dinner", "snack"]);
@@ -116,7 +117,28 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
                   <Dot tone="blaze" /> 과거 기록 편집 중
                 </span>
               )}
-              <ClearDayControl key={selected} store={store} selected={selected} />
+              {undoState.pending ? (
+                <span role="status" className="flex items-center gap-1 font-mono text-[11px] text-ink/60">
+                  <b className="text-ink">{shortLabel(undoState.pending.key)}</b> 기록을 삭제했어요
+                  <button
+                    type="button"
+                    onClick={undoState.undo}
+                    className="-my-2 px-2 py-2 font-bold text-ink underline underline-offset-4"
+                  >
+                    되돌리기
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="알림 닫기"
+                    onClick={undoState.dismiss}
+                    className="-my-2 flex h-8 w-8 items-center justify-center text-ink/40 hover:text-ink"
+                  >
+                    <X size={13} strokeWidth={1.75} />
+                  </button>
+                </span>
+              ) : (
+                <ClearDayControl key={selected} store={store} selected={selected} onConfirm={undoState.clear} />
+              )}
             </div>
           </div>
         </div>
@@ -125,39 +147,78 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
       <GroupCaption letter="A" title="식단 · 운동" hint="아침 → 점심 → 저녁 → 간식, 그리고 오늘 움직인 것" summary={summaryA} />
       <div className="col-span-6 grid grid-cols-1 gap-[1.5px] bg-ink sm:grid-cols-2 md:col-span-12 lg:grid-cols-5">
         {MAIN_CATEGORIES.map((c) => (
-          <LogColumn key={c.key} cat={c.key} label={c.label} store={store} selected={selected} />
+          // keyed by date: unsent input, tag drafts and tag-edit mode never leak into another day
+          <LogColumn key={`${c.key}:${selected}`} cat={c.key} label={c.label} store={store} selected={selected} />
         ))}
       </div>
 
       {/* Row 2: condition note + injection log */}
       <GroupCaption letter="B" title="컨디션 · 주사" hint="몸 상태 한 줄과 다이어트 주사 투약 기록" summary={summaryB} />
       <div className="col-span-6 grid grid-cols-1 gap-[1.5px] bg-ink md:col-span-12 md:grid-cols-5">
-        <NoteCell store={store} selected={selected} />
-        <LogColumn cat="injection" label="주사" store={store} selected={selected} wide />
+        <NoteCell key={`note:${selected}`} store={store} selected={selected} />
+        <LogColumn key={`injection:${selected}`} cat="injection" label="주사" store={store} selected={selected} wide />
       </div>
     </>
   );
 }
 
+const UNDO_MS = 8000;
+
+/**
+ * Delete-with-undo, owned by DailyLog (which is *not* re-keyed per date), so the undo
+ * survives moving to another day. The removed entry is remembered with its own date key.
+ */
+function useClearDayUndo(store: DietStore) {
+  const [pending, setPending] = useState<{ key: string; entry: DayEntry } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    []
+  );
+
+  const clear = (key: string) => {
+    const entry = store.data.days[key];
+    if (!entry) return;
+    store.clearDay(key);
+    setPending({ key, entry });
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setPending(null), UNDO_MS);
+  };
+  const undo = () => {
+    if (pending) store.restoreDay(pending.key, pending.entry);
+    if (timer.current) clearTimeout(timer.current);
+    setPending(null);
+  };
+  const dismiss = () => {
+    if (timer.current) clearTimeout(timer.current);
+    setPending(null);
+  };
+  return { pending, clear, undo, dismiss };
+}
+
 /**
  * "이 날 기록 삭제": only shown when the day has something to delete.
- * idle → confirm (취소 focused by default, Esc cancels) → done (6 s undo).
+ * idle → confirm (취소 focused by default, Esc cancels) → onConfirm. Keyed by date by the parent,
+ * so an open confirmation never carries over to another day.
  * Goal weight and tags are untouched (see store.clearDay).
  */
-function ClearDayControl({ store, selected }: { store: DietStore; selected: string }) {
-  const [phase, setPhase] = useState<"idle" | "confirm" | "done">("idle");
-  const [backup, setBackup] = useState<DayEntry | null>(null);
-  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+function ClearDayControl({
+  store,
+  selected,
+  onConfirm,
+}: {
+  store: DietStore;
+  selected: string;
+  onConfirm: (key: string) => void;
+}) {
+  const [phase, setPhase] = useState<"idle" | "confirm">("idle");
   const cancelRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const has = hasDayRecord(store.data, selected);
 
-  useEffect(
-    () => () => {
-      if (undoTimer.current) clearTimeout(undoTimer.current);
-    },
-    []
-  );
   useEffect(() => {
     if (phase === "confirm") cancelRef.current?.focus();
   }, [phase]);
@@ -167,32 +228,9 @@ function ClearDayControl({ store, selected }: { store: DietStore; selected: stri
     requestAnimationFrame(() => triggerRef.current?.focus());
   };
   const confirm = () => {
-    setBackup(store.data.days[selected] ?? null);
-    store.clearDay(selected);
-    setPhase("done");
-    if (undoTimer.current) clearTimeout(undoTimer.current);
-    undoTimer.current = setTimeout(() => {
-      setPhase("idle");
-      setBackup(null);
-    }, 6000);
-  };
-  const undo = () => {
-    if (backup) store.restoreDay(selected, backup);
-    if (undoTimer.current) clearTimeout(undoTimer.current);
-    setBackup(null);
+    onConfirm(selected);
     setPhase("idle");
   };
-
-  if (phase === "done") {
-    return (
-      <span role="status" className="flex items-center gap-2 font-mono text-[11px] text-ink/60">
-        {shortLabel(selected)} 기록을 삭제했어요
-        <button type="button" onClick={undo} className="-my-2 px-2 py-2 font-bold text-ink underline underline-offset-4">
-          되돌리기
-        </button>
-      </span>
-    );
-  }
 
   if (phase === "confirm") {
     return (
