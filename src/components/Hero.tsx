@@ -3,8 +3,9 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
-import { shortLabel, weekdayKo } from "@/lib/date";
-import { latestWeight, parseKg, prevWeight, type DietStore } from "@/lib/store";
+import { shortLabel, todayKey, weekdayKo } from "@/lib/date";
+import { goalProgress, lastInjection, latestWeight, parseKg, prevWeight, type DietStore } from "@/lib/store";
+import type { Category } from "@/lib/types";
 import { AnimatedNumber, Cell, Dot, Label } from "./ui";
 
 export function Hero({ store, selected }: { store: DietStore; selected: string }) {
@@ -54,14 +55,52 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
   const toGoal = weight !== undefined ? weight - goal : undefined;
 
   const trend = delta === undefined ? null : delta < -0.04 ? "down" : delta > 0.04 ? "up" : "flat";
+  const isToday = selected === todayKey();
+  const firstRun = !Object.values(data.days).some((d) => d.weight !== undefined);
+  const progress = weight !== undefined ? goalProgress(data, weight) : null;
+
+  // Day facts: meals / exercise / injection status / note — links the weight to the rest of the log
+  const day = data.days[selected];
+  const n = (keys: Category[]) => keys.reduce((s, k) => s + (day?.logs[k]?.length ?? 0), 0);
+  const meals = n(["breakfast", "lunch", "dinner", "snack"]);
+  const workouts = n(["exercise"]);
+  const injectedToday = n(["injection"]) > 0;
+
+  const lastInj = lastInjection(data, selected, { strict: true });
+  const injDue = isToday && !injectedToday && !!lastInj && lastInj.daysAgo >= 7;
+  const firstText = (keys: Category[]) =>
+    keys
+      .flatMap((k) => day?.logs[k] ?? [])
+      .map((l) => l.text)
+      .join(", ");
+
+  /** Today panel rows: what was eaten / done / dosed / felt — the rest of the diary at a glance. */
+  const status: { key: string; label: string; value: string; detail: string; on: boolean; dot?: "acid" | "blaze" }[] = [
+    { key: "meal", label: "식단", value: meals ? `${meals}건` : "—", detail: firstText(["breakfast", "lunch", "dinner", "snack"]) || "아직 기록 없음", on: meals > 0 },
+    { key: "ex", label: "운동", value: workouts ? `${workouts}건` : "—", detail: firstText(["exercise"]) || "아직 기록 없음", on: workouts > 0 },
+    {
+      key: "inj",
+      label: "주사",
+      value: injectedToday ? "투약함" : lastInj ? `D+${lastInj.daysAgo}` : "—",
+      detail: injectedToday
+        ? firstText(["injection"])
+        : lastInj
+          ? `${injDue ? "투약 예정일 · " : ""}지난 ${shortLabel(lastInj.key)} ${lastInj.text}`
+          : "투약 기록 없음",
+      on: injectedToday || !!lastInj,
+      dot: injectedToday ? "acid" : injDue ? "blaze" : undefined,
+    },
+    { key: "note", label: "컨디션", value: day?.note ? "✓" : "—", detail: day?.note || "한 줄 메모 없음", on: !!day?.note },
+  ];
+  const goToLog = () => document.getElementById("daily-log")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <>
-      {/* Main weight */}
+      {/* 01 · Main weight — the headline figure */}
       <Cell
         index="01"
-        label={`Body weight · ${shortLabel(selected)} ${weekdayKo(selected)}`}
-        className="col-span-6 min-h-[230px] md:col-span-8 md:min-h-[360px]"
+        label={`${isToday ? "오늘의 체중" : "체중"} · ${shortLabel(selected)} ${weekdayKo(selected)}`}
+        className="col-span-6 min-h-[230px] md:col-span-7 md:min-h-[300px] xl:col-span-5"
         right={
           weight !== undefined && (
             <button
@@ -76,7 +115,7 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
         }
       >
         <div className="flex flex-1 flex-col justify-end px-5 pb-5 md:px-6 md:pb-6">
-          <div className="flex items-end gap-3 md:gap-4">
+          <div className="flex items-end gap-3">
             <div className={`relative min-w-0 ${editing ? "flex-1" : ""}`}>
               <AnimatePresence mode="popLayout" initial={false}>
                 {editing ? (
@@ -115,7 +154,7 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
                           close(true);
                         }
                       }}
-                      className={`display-tight w-full border-b-[3px] bg-transparent text-[clamp(6.5rem,18vw,15rem)] outline-none placeholder:text-ink/15 ${
+                      className={`display-tight w-full border-b-[3px] bg-transparent text-[clamp(6.5rem,18vw,8rem)] outline-none placeholder:text-ink/15 md:text-[clamp(7rem,11vw,11rem)] ${
                         invalid ? "border-blaze text-blaze" : "border-ink"
                       }`}
                     />
@@ -140,20 +179,31 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
                     exit={{ opacity: 0 }}
                     whileTap={{ scale: 0.985 }}
                     transition={{ duration: 0.12 }}
-                    className="group block w-full cursor-text text-left"
+                    className="group block cursor-text text-left"
                   >
                     {weight !== undefined ? (
-                      <AnimatedNumber value={weight} className="display-tight block text-[clamp(6.5rem,18vw,15rem)]" />
+                      <AnimatedNumber
+                        value={weight}
+                        className="display-tight block text-[clamp(6.5rem,18vw,8rem)] md:text-[clamp(7rem,11vw,11rem)]"
+                      />
                     ) : (
-                      <span className="display-tight block text-[clamp(6.5rem,18vw,15rem)] text-ink/12">00.0</span>
+                      <span className="display-tight block text-[clamp(6.5rem,18vw,8rem)] text-ink/12 md:text-[clamp(7rem,11vw,11rem)]">
+                        00.0
+                      </span>
                     )}
                     <span className="mt-1 block h-[3px] w-0 bg-ink transition-[width] duration-300 group-hover:w-full" />
                   </motion.button>
                 )}
               </AnimatePresence>
             </div>
-            <span className="display-tight pb-[0.35em] text-[clamp(1.75rem,3.5vw,3rem)] text-ink/70">kg</span>
+            <span className="display-tight pb-[0.35em] text-[clamp(1.75rem,3vw,2.75rem)] text-ink/70">kg</span>
           </div>
+
+          {firstRun && !editing && (
+            <p className="mt-3 max-w-md font-mono text-[12px] leading-relaxed text-ink/55">
+              숫자를 눌러 첫 체중을 입력하면 기록이 시작됩니다. 둘러보려면 오른쪽 위 설정에서 샘플 데이터를 채워 보세요.
+            </p>
+          )}
 
           <div className="mt-5 hidden items-center gap-2 md:flex">
             <StepButton label="0.1kg 감소" onClick={() => nudge(-0.1)}>
@@ -162,22 +212,22 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
             <StepButton label="0.1kg 증가" onClick={() => nudge(0.1)}>
               <Plus size={16} strokeWidth={2} />
             </StepButton>
-            <Label className="ml-2">±0.1 kg</Label>
+            <Label className="ml-1">±0.1 kg</Label>
           </div>
         </div>
       </Cell>
 
-      {/* Side stack: change + goal */}
-      <div className="col-span-6 grid grid-cols-2 md:col-span-4 md:flex md:flex-col [&>*]:flex-1">
-        <Cell index="02" label="vs. 이전" className="min-h-[160px] border-r border-ink/15 md:min-h-[180px] md:border-r-0 md:border-b">
-          <div className="flex flex-1 flex-col justify-end gap-2 px-5 pb-5 md:px-6 md:pb-6">
+      {/* 02 + 03 · Change and goal — second priority, stacked */}
+      <div className="col-span-6 grid grid-cols-2 md:col-span-5 md:flex md:flex-col xl:col-span-3 [&>*]:flex-1">
+        <Cell index="02" label="직전 기록 대비" className="min-h-[150px] border-r border-ink/15 md:border-r-0 md:border-b">
+          <div className="flex flex-1 flex-col justify-end gap-2 px-5 pb-5 md:px-6">
             {delta !== undefined && prev ? (
               <>
                 <div className="flex items-end gap-2">
                   <AnimatedNumber
                     value={delta}
                     signed
-                    className={`display-tight text-[clamp(2.75rem,5.5vw,4.75rem)] ${trend === "up" ? "text-blaze" : ""}`}
+                    className={`display-tight text-[clamp(2.75rem,4.5vw,4rem)] ${trend === "up" ? "text-blaze" : ""}`}
                   />
                   <span className="display-tight pb-[0.3em] text-xl text-ink/70">kg</span>
                 </div>
@@ -192,28 +242,63 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
           </div>
         </Cell>
 
-        <Cell index="03" label="목표까지" className="min-h-[160px] md:min-h-[180px]">
-          <div className="flex flex-1 flex-col justify-end gap-3 px-5 pb-5 md:px-6 md:pb-6">
+        <Cell index="03" label="목표까지" className="min-h-[150px]">
+          <div className="flex flex-1 flex-col justify-end gap-3 px-5 pb-5 md:px-6">
             {toGoal !== undefined ? (
               <>
                 <div className="flex items-end gap-2">
                   {toGoal <= 0 ? (
-                    <span className="display-tight text-[clamp(2.75rem,5.5vw,4.75rem)]">달성</span>
+                    <span className="display-tight text-[clamp(2.75rem,4.5vw,4rem)]">달성</span>
                   ) : (
                     <>
-                      <AnimatedNumber value={toGoal} className="display-tight text-[clamp(2.75rem,5.5vw,4.75rem)]" />
+                      <AnimatedNumber value={toGoal} className="display-tight text-[clamp(2.75rem,4.5vw,4rem)]" />
                       <span className="display-tight pb-[0.3em] text-xl text-ink/70">kg</span>
                     </>
                   )}
                 </div>
-                <GoalBar weight={weight!} goal={goal} />
+                <GoalBar weight={weight!} goal={goal} progress={progress} />
               </>
             ) : (
-              <p className="font-mono text-[12px] text-ink/45">목표 {goal.toFixed(1)}kg</p>
+              <p className="font-mono text-[12px] text-ink/45">목표 {goal.toFixed(1)}kg · 체중을 입력하면 남은 양과 진행률이 보여요</p>
             )}
           </div>
         </Cell>
       </div>
+
+      {/* 04 · Today's diary status — third priority; links down to the full log */}
+      <Cell
+        index="04"
+        label={isToday ? "오늘의 현황" : "이 날의 현황"}
+        className="col-span-6 md:col-span-12 xl:col-span-4"
+        right={
+          <button
+            type="button"
+            onClick={goToLog}
+            className="-my-2.5 px-2 py-2.5 font-mono text-[10.5px] text-ink/45 underline-offset-4 hover:text-ink hover:underline md:-my-1 md:py-1"
+          >
+            하루 기록 ↓
+          </button>
+        }
+      >
+        <ul className="grid flex-1 grid-cols-2 gap-px px-5 pt-3 pb-5 md:grid-cols-4 md:px-6 xl:grid-cols-1 xl:content-end xl:gap-0">
+          {status.map((s) => (
+            <li key={s.key} className="border-ink/10 py-2 xl:border-b xl:py-2.5 xl:last:border-b-0">
+              <button type="button" onClick={goToLog} className="group flex w-full min-w-0 flex-col items-start gap-0.5 text-left xl:flex-row xl:items-baseline xl:gap-3">
+                <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] text-ink/55 xl:w-14">
+                  {s.dot && <Dot tone={s.dot} />}
+                  {s.label}
+                </span>
+                <b className={`shrink-0 font-mono text-[13px] tabular-nums xl:w-14 ${s.on ? "" : "text-ink/30"} ${s.dot === "blaze" ? "text-blaze" : ""}`}>
+                  {s.value}
+                </b>
+                <span className={`w-full min-w-0 truncate text-[12px] group-hover:text-ink ${s.on ? "text-ink/70" : "text-ink/35"}`}>
+                  {s.detail}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Cell>
     </>
   );
 }
@@ -233,11 +318,32 @@ function StepButton({ label, onClick, children }: { label: string; onClick: () =
   );
 }
 
-/** Thin progress rule: acid fill over a 10 kg window above the goal, with start/goal captions. */
-function GoalBar({ weight, goal }: { weight: number; goal: number }) {
-  const pct = Math.max(0, Math.min(1, 1 - (weight - goal) / 10));
+/**
+ * Thin progress rule from the starting weight (first record) to the goal.
+ * Falls back to a 10 kg window above the goal when there is no usable start.
+ */
+function GoalBar({
+  weight,
+  goal,
+  progress,
+}: {
+  weight: number;
+  goal: number;
+  progress: ReturnType<typeof goalProgress>;
+}) {
+  const pct = progress ? progress.pct : Math.max(0, Math.min(1, 1 - (weight - goal) / 10));
   return (
     <div>
+      {progress && (
+        <p className="mb-1.5 flex items-baseline justify-between gap-2 font-mono text-[11px]">
+          <span>
+            진행 <b className="tabular-nums">{Math.round(pct * 100)}%</b>
+          </span>
+          <span className="text-ink/50">
+            {progress.lost > 0 ? `${progress.lost.toFixed(1)}kg 감량` : "시작 체중 대비"}
+          </span>
+        </p>
+      )}
       <div className="relative h-1.5 bg-ink/10">
         <motion.div
           className="absolute inset-y-0 left-0 bg-acid"
@@ -252,7 +358,7 @@ function GoalBar({ weight, goal }: { weight: number; goal: number }) {
         />
       </div>
       <div className="mt-1.5 flex justify-between font-mono text-[10.5px] text-ink/50">
-        <span>{weight.toFixed(1)}</span>
+        <span>{progress ? `시작 ${progress.start.toFixed(1)}` : weight.toFixed(1)}</span>
         <span>목표 {goal.toFixed(1)}</span>
       </div>
     </div>

@@ -69,9 +69,13 @@ export function Dashboard() {
         <TrendChart store={store} selected={selected} onSelect={selectFromChart} />
         <DailyLog store={store} selected={selected} pulse={pulse} />
       </div>
-      <footer className="hidden justify-between md:flex px-1 pt-3 font-mono text-[10px] uppercase tracking-[0.14em] opacity-60">
-        <span>← → 날짜 이동 · T 오늘</span>
-        <span>Saved locally · LocalStorage</span>
+      <footer className="flex flex-col gap-1 px-1 pt-3 font-mono text-[10.5px] text-ink/50 md:flex-row md:justify-between">
+        <span>
+          <b className="font-bold text-ink/70">WEIGHT/LOG</b> · 체중 · 식단 · 운동 · 주사 · 컨디션 다이어트 데일리 트래커
+        </span>
+        <span>
+          <span className="hidden md:inline">← → 날짜 이동 · T 오늘 · </span>기록은 이 기기에만 저장돼요 (설정에서 백업)
+        </span>
       </footer>
       <QuickBar store={store} selected={selected} />
       <SettingsModal open={settingsOpen} onClose={closeSettings} store={store} />

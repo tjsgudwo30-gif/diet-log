@@ -23,7 +23,7 @@ const INJECTION_INTERVAL_DAYS = 7;
 
 /** Quick-bar input modes: every log category plus the one-line day note. */
 type Mode = Category | "note";
-const MODES: { key: Mode; label: string }[] = [...CATEGORIES.map((c) => ({ key: c.key, label: c.label })), { key: "note", label: "메모" }];
+const MODES: { key: Mode; label: string }[] = [...CATEGORIES.map((c) => ({ key: c.key, label: c.label })), { key: "note", label: "컨디션" }];
 
 const PLACEHOLDER: Partial<Record<Mode, string>> = {
   exercise: "운동 메모…",

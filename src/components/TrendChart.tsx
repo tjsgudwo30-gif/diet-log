@@ -113,14 +113,14 @@ const LEGEND: { label: string; icon: ReactNode }[] = [
     label: "7일 평균",
     icon: <line x1="0" y1="5" x2="18" y2="5" stroke={INK} strokeOpacity="0.4" strokeWidth="1.5" strokeDasharray="3 3" />,
   },
-  { label: "주사", icon: <path d={diamond(9, 5, 4)} fill={BLAZE} stroke={INK} strokeWidth="1" /> },
-  { label: "목표", icon: <line x1="0" y1="5" x2="18" y2="5" stroke={INK} strokeOpacity="0.55" strokeWidth="1" strokeDasharray="1 3" /> },
+  { label: "주사일", icon: <path d={diamond(9, 5, 4)} fill={BLAZE} stroke={INK} strokeWidth="1" /> },
+  { label: "목표 체중", icon: <line x1="0" y1="5" x2="18" y2="5" stroke={INK} strokeOpacity="0.55" strokeWidth="1" strokeDasharray="1 3" /> },
 ];
 
 /** One figure in the summary strip. */
 function Stat({ label, children, sub }: { label: string; children: ReactNode; sub?: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 bg-paper px-5 py-4 md:px-6">
+    <div className="flex min-w-0 flex-col justify-center gap-1.5 bg-paper px-5 py-4 md:px-6 xl:py-3">
       <Label>{label}</Label>
       <div className="flex items-end gap-1.5">{children}</div>
       {sub && <div className="font-mono text-[10.5px] text-ink/55">{sub}</div>}
@@ -156,12 +156,16 @@ export function TrendChart({
   const hi = Math.ceil(max + 0.5);
   const weekly = useMemo(() => weeklyStats(data, selected), [data, selected]);
   const injDays = series.filter((p) => p.inj).map((p) => p.key);
-  const big = "display-tight text-[2rem] md:text-[2.5rem]";
+  const weighIns = series.filter((p) => p.weight !== null);
+  const minKey = weighIns.find((p) => p.weight === min)?.key;
+  const maxKey = weighIns.find((p) => p.weight === max)?.key;
+  const rangeLabel = range === "all" ? "전체 기간" : `최근 ${range}일`;
+  const big = "display-tight text-[2rem] md:text-[2.5rem] xl:text-[2.25rem]";
 
   return (
     <Cell
-      index="04"
-      label="Trend"
+      index="05"
+      label="체중 추이"
       className="col-span-6 md:col-span-12"
       right={
         <div role="tablist" aria-label="기간" className="-my-1 flex gap-1">
@@ -172,7 +176,7 @@ export function TrendChart({
               role="tab"
               aria-selected={range === r.key}
               onClick={() => setRange(r.key)}
-              className={`relative px-2.5 py-1.5 font-mono text-[11px] font-bold tracking-[0.08em] transition-colors ${
+              className={`relative px-2.5 py-2.5 font-mono text-[11px] font-bold md:py-1.5 tracking-[0.08em] transition-colors ${
                 range === r.key ? "text-ink" : "text-ink/40 hover:text-ink"
               }`}
             >
@@ -189,46 +193,15 @@ export function TrendChart({
         </div>
       }
     >
-      {/* Summary strip: four figures side by side, hairline separated */}
-      <dl className="mt-3 grid grid-cols-2 gap-px border-y border-ink/15 bg-ink/15 sm:grid-cols-4">
-        <Stat label="Low">
-          <span className={big}>{hasData ? min.toFixed(1) : "—"}</span>
-        </Stat>
-        <Stat label="High">
-          <span className={big}>{hasData ? max.toFixed(1) : "—"}</span>
-        </Stat>
-        <Stat
-          label="Δ 기간"
-          sub={
-            hasData && (
-              <span className="flex items-center gap-1.5">
-                <Dot tone={trendTone(change)} />
-                {RANGES.find((r) => r.key === range)?.label} 첫 기록 대비
-              </span>
-            )
-          }
-        >
-          <span className={`${big} ${trendTone(change) === "blaze" ? "text-blaze" : ""}`}>{hasData ? signed(change) : "—"}</span>
-        </Stat>
-        <Stat
-          label="7일 평균"
-          sub={
-            weekly.delta !== null ? (
-              <span className="flex items-center gap-1.5">
-                <Dot tone={trendTone(weekly.delta)} />
-                이전 7일 대비 {signed(weekly.delta)}
-              </span>
-            ) : (
-              <span>{weekly.current ? `${weekly.current.count}/7일 기록` : "기록 없음"}</span>
-            )
-          }
-        >
-          <span className={big}>{weekly.current ? <AnimatedNumber value={weekly.current.avg} /> : "—"}</span>
-        </Stat>
-      </dl>
-
-      <div className="flex h-[280px] flex-col md:h-[360px]">
-        <ul aria-label="그래프 범례" className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 px-5 pt-3 md:px-6">
+      {/* Purpose + legend on one row: what the chart is for, what the marks mean */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-5 pt-2 pb-3 font-mono text-[11px] text-ink/55 md:px-6">
+        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-ink">체중 변화 · 7일 평균 · 주사일을 한 화면에서</span>
+          <span>
+            {rangeLabel} · 체중 기록 {weighIns.length}일 · 주사 {injDays.length}회
+          </span>
+        </p>
+        <ul aria-label="그래프 범례" className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {LEGEND.map((l) => (
             <li key={l.label} className="flex items-center gap-1.5 font-mono text-[10.5px] text-ink/55">
               <svg width="18" height="10" aria-hidden className="shrink-0">
@@ -238,7 +211,48 @@ export function TrendChart({
             </li>
           ))}
         </ul>
-        <div className="relative min-h-0 flex-1 px-1 pt-1 pb-3 md:px-3">
+      </div>
+
+      <div className="xl:grid xl:grid-cols-[21rem_1fr] xl:border-t xl:border-ink/15">
+        {/* Summary strip: four figures side by side, hairline separated */}
+        <dl className="grid grid-cols-2 gap-px border-y border-ink/15 bg-ink/15 sm:grid-cols-4 xl:grid-cols-2 xl:grid-rows-2 xl:border-y-0 xl:border-r">
+          <Stat label="최저 체중" sub={minKey && `${shortLabel(minKey)} 기록`}>
+            <span className={big}>{hasData ? min.toFixed(1) : "—"}</span>
+          </Stat>
+          <Stat label="최고 체중" sub={maxKey && `${shortLabel(maxKey)} 기록`}>
+            <span className={big}>{hasData ? max.toFixed(1) : "—"}</span>
+          </Stat>
+          <Stat
+            label="기간 변화"
+            sub={
+              hasData && (
+                <span className="flex items-center gap-1.5">
+                  <Dot tone={trendTone(change)} />
+                  {rangeLabel} 첫 기록 대비
+                </span>
+              )
+            }
+          >
+            <span className={`${big} ${trendTone(change) === "blaze" ? "text-blaze" : ""}`}>{hasData ? signed(change) : "—"}</span>
+          </Stat>
+          <Stat
+            label="7일 평균 체중"
+            sub={
+              weekly.delta !== null ? (
+                <span className="flex items-center gap-1.5">
+                  <Dot tone={trendTone(weekly.delta)} />
+                  이전 7일 대비 {signed(weekly.delta)}
+                </span>
+              ) : (
+                <span>{weekly.current ? `${weekly.current.count}/7일 기록` : "기록 없음"}</span>
+              )
+            }
+          >
+            <span className={big}>{weekly.current ? <AnimatedNumber value={weekly.current.avg} /> : "—"}</span>
+          </Stat>
+        </dl>
+
+        <div className="relative h-[260px] px-1 pt-3 pb-3 md:h-[300px] md:px-3 xl:h-[310px]">
           {series.filter((p) => p.weight !== null).length < 1 ? (
             <div className="flex h-full items-center justify-center font-mono text-[12px] text-ink/45">
               이 기간에 기록이 없습니다 · 설정에서 샘플 데이터를 채워 보세요

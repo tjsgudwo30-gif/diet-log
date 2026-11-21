@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "WEIGHT/LOG — Personal Diet Studio",
+  "name": "WEIGHT/LOG — 다이어트 데일리 트래커",
   "short_name": "WEIGHT/LOG",
-  "description": "개인용 다이어트 & 체중 기록 대시보드",
+  "description": "체중 · 식단 · 운동 · 주사 · 컨디션을 하루 한 화면에 기록하는 개인용 다이어트 트래커",
   "lang": "ko",
   "start_url": "/?source=pwa",
   "scope": "/",

@@ -379,6 +379,26 @@ export function latestWeight(data: AppData, key: string): number | undefined {
   return prevWeight(data, key)?.weight;
 }
 
+/**
+ * Progress toward the goal, measured from the first weight ever recorded (the starting point)
+ * to the goal. Returns null when there is no start above the goal to measure from.
+ */
+export function goalProgress(
+  data: AppData,
+  current: number
+): { start: number; startKey: string; lost: number; total: number; pct: number } | null {
+  const keys = Object.keys(data.days)
+    .filter((k) => data.days[k].weight !== undefined)
+    .sort();
+  if (!keys.length) return null;
+  const startKey = keys[0];
+  const start = data.days[startKey].weight!;
+  const total = start - data.goalWeight;
+  if (total <= 0.05) return null;
+  const lost = start - current;
+  return { start, startKey, lost: round1(lost), total: round1(total), pct: Math.max(0, Math.min(1, lost / total)) };
+}
+
 /** Mean of recorded weights in [end − days + 1, end]; null when the window has no weights. */
 export function windowAverage(data: AppData, end: string, days = 7): { avg: number; count: number } | null {
   let sum = 0;
