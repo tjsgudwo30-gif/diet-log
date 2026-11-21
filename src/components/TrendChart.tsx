@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import {
   Line,
   LineChart,
@@ -91,6 +91,40 @@ function buildSeries(data: AppData, selected: string, range: Range): Point[] {
 
 /** Diamond marker path centred on (cx, cy). */
 const diamond = (cx: number, cy: number, r: number) => `M${cx} ${cy - r}L${cx + r} ${cy}L${cx} ${cy + r}L${cx - r} ${cy}Z`;
+
+/** Legend entries drawn with the same strokes/markers as the chart (22×12 swatches). */
+const LEGEND: { label: string; icon: ReactNode }[] = [
+  {
+    label: "체중",
+    icon: (
+      <>
+        <line x1="0" y1="6" x2="22" y2="6" stroke="#000" strokeWidth="2.5" />
+        <rect x="7.5" y="2.5" width="7" height="7" fill="#F4F4F0" stroke="#000" strokeWidth="2" />
+      </>
+    ),
+  },
+  {
+    label: "7일 평균",
+    icon: <line x1="0" y1="6" x2="22" y2="6" stroke="#000" strokeOpacity="0.55" strokeWidth="1.5" strokeDasharray="4 4" />,
+  },
+  {
+    label: "주사일",
+    icon: (
+      <>
+        <line x1="11" y1="0" x2="11" y2="12" stroke="#FF4D00" strokeOpacity="0.55" strokeWidth="1.5" />
+        <path d={diamond(11, 6, 5)} fill="#FF4D00" stroke="#000" strokeWidth="1.5" />
+      </>
+    ),
+  },
+  {
+    label: "목표",
+    icon: <line x1="0" y1="6" x2="22" y2="6" stroke="#FF4D00" strokeWidth="2" strokeDasharray="6 4" />,
+  },
+  {
+    label: "선택일",
+    icon: <rect x="5" y="0.5" width="11" height="11" fill="#CCFF00" stroke="#000" strokeWidth="2" />,
+  },
+];
 
 /** 7D AVG bento cell: average of the 7 days ending at `selected` and Δ vs. the 7 days before. */
 function WeeklyCell({ stats }: { stats: WeeklyStats }) {
@@ -191,22 +225,22 @@ export function TrendChart({
           </div>
         </dl>
 
-        <div className="relative h-[260px] px-1 pt-6 pb-2 md:h-[340px] md:px-2">
-          {/* legend */}
-          <div className="pointer-events-none absolute top-1 left-3 z-10 flex gap-3 font-mono text-[10px] font-bold uppercase">
-            <span className="flex items-center gap-1">
-              <svg width="18" height="8" aria-hidden>
-                <line x1="0" y1="4" x2="18" y2="4" stroke="#000" strokeWidth="1.5" strokeDasharray="3 3" />
-              </svg>
-              7D AVG
-            </span>
-            <span className="flex items-center gap-1">
-              <svg width="10" height="10" aria-hidden>
-                <path d={diamond(5, 5, 4)} fill="#FF4D00" stroke="#000" strokeWidth="1.5" />
-              </svg>
-              주사
-            </span>
-          </div>
+        <div className="flex h-[300px] flex-col md:h-[380px]">
+          {/* Legend: its own strip above the plot, so it never sits on top of lines, dots or the GOAL label */}
+          <ul
+            aria-label="그래프 범례"
+            className="mx-3 mt-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-dashed border-ink/40 pb-2 font-mono text-[10px] font-bold uppercase md:mx-4"
+          >
+            {LEGEND.map((l) => (
+              <li key={l.label} className="flex items-center gap-1.5">
+                <svg width="22" height="12" aria-hidden className="shrink-0">
+                  {l.icon}
+                </svg>
+                {l.label}
+              </li>
+            ))}
+          </ul>
+          <div className="relative min-h-0 flex-1 px-1 pt-2 pb-2 md:px-2">
           {series.filter((p) => p.weight !== null).length < 1 ? (
             <div className="flex h-full items-center justify-center font-mono text-sm opacity-60">
               — 이 기간에 기록이 없습니다. 설정에서 샘플 데이터를 채워보세요.
@@ -215,7 +249,7 @@ export function TrendChart({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={series}
-                margin={{ top: 16, right: 24, bottom: 0, left: 0 }}
+                margin={{ top: 12, right: 24, bottom: 0, left: 0 }}
                 onClick={(state) => {
                   const k = resolveKey(state, series);
                   if (k) onSelect(k);
@@ -332,6 +366,7 @@ export function TrendChart({
               </LineChart>
             </ResponsiveContainer>
           )}
+          </div>
         </div>
       </div>
     </Cell>
@@ -346,41 +381,54 @@ function ChartTooltip({ active, dayKey, data }: { active?: boolean; dayKey: stri
   const injections = day.logs.injection ?? [];
   const items = MAIN_CATEGORIES.map((c) => ({ ...c, list: day.logs[c.key] ?? [] })).filter((c) => c.list.length);
   if (day.weight === undefined && !items.length && !injections.length && !day.note) return null;
+  // Long content is clamped per section (not truncated to one line), so the card keeps its shape.
   return (
-    <div className="w-64 border-2 border-ink bg-paper shadow-[5px_5px_0_0_#000]">
-      <div className="flex items-center justify-between border-b-2 border-ink bg-ink px-3 py-1.5 font-mono text-[11px] font-bold text-paper">
-        <span>
+    <div className="w-72 max-w-[calc(100vw-2.5rem)] border-2 border-ink bg-paper font-mono text-[11px] leading-snug shadow-[5px_5px_0_0_#000]">
+      <div className="flex items-center justify-between gap-2 border-b-2 border-ink bg-ink px-3 py-1.5 font-bold text-paper">
+        <span className="whitespace-nowrap">
           {label.replaceAll("-", ".")} ({weekdayKo(label)})
         </span>
-        <span className="text-acid">CLICK → OPEN</span>
+        <span className="whitespace-nowrap text-acid">CLICK → OPEN</span>
       </div>
-      <div className="flex items-end gap-1 px-3 pt-2">
+
+      <div className="flex items-end gap-1 px-3 pt-2 pb-1">
         <span className={`display-tight text-5xl ${day.weight === undefined ? "opacity-25" : ""}`}>
           {day.weight !== undefined ? day.weight.toFixed(1) : "—"}
         </span>
         <span className="display-tight pb-1 text-lg">KG</span>
       </div>
-      {injections.length > 0 && (
-        <div className="mx-3 mt-2 flex items-start gap-1.5 border-2 border-ink bg-blaze px-2 py-1 font-mono text-[11px] font-bold leading-snug">
-          <Syringe size={13} strokeWidth={2.5} className="mt-px shrink-0" />
-          <span className="break-words break-keep">{injections.map((l) => l.text).join(" / ")}</span>
+
+      {(injections.length > 0 || day.note) && (
+        <div className="space-y-1.5 px-3 pt-1 pb-2">
+          {injections.length > 0 && (
+            <div className="flex items-start gap-1.5 border-2 border-ink bg-blaze px-2 py-1 font-bold">
+              <Syringe size={13} strokeWidth={2.5} className="mt-px shrink-0" />
+              <span className="line-clamp-2 min-w-0 break-words break-keep">
+                {injections.map((l) => l.text).join(" / ")}
+              </span>
+            </div>
+          )}
+          {day.note && (
+            <p className="flex items-start gap-1.5 border-2 border-ink px-2 py-1">
+              <span className="shrink-0 bg-ink px-1 font-bold text-acid">NOTE</span>
+              <span className="line-clamp-3 min-w-0 break-words break-keep">{day.note}</span>
+            </p>
+          )}
         </div>
       )}
-      {day.note && (
-        <p className="mx-3 mt-2 border-l-4 border-acid bg-ink/5 px-2 py-1 font-mono text-[11px] leading-snug break-words break-keep">
-          <span className="font-bold">NOTE </span>
-          {day.note}
-        </p>
-      )}
-      <ul className="space-y-1 px-3 pt-2 pb-3 font-mono text-[11px] leading-snug">
-        {items.length === 0 && <li className="opacity-50">— 식단 기록 없음</li>}
+
+      <dl className="grid grid-cols-[2.75rem_1fr] gap-x-2 gap-y-1 border-t-2 border-ink px-3 pt-2 pb-3">
+        {items.length === 0 && <dd className="col-span-2 opacity-50">— 식단·운동 기록 없음</dd>}
         {items.map((c) => (
-          <li key={c.key} className="flex gap-2">
-            <span className={`w-10 shrink-0 font-bold ${c.key === "exercise" ? "text-blaze" : ""}`}>{c.label}</span>
-            <span className="truncate">{c.list.map((l) => l.text).join(", ")}</span>
-          </li>
+          <Fragment key={c.key}>
+            <dt className={`font-bold ${c.key === "exercise" ? "text-blaze" : ""}`}>{c.label}</dt>
+            <dd className="line-clamp-2 min-w-0 break-words break-keep">
+              {c.list.map((l) => l.text).join(", ")}
+              {c.list.length > 1 && <span className="ml-1 opacity-50">({c.list.length})</span>}
+            </dd>
+          </Fragment>
         ))}
-      </ul>
+      </dl>
     </div>
   );
 }

@@ -4,7 +4,16 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, ChevronUp, Minus, Plus, Send, Syringe } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { shortLabel, todayKey, weekdayKo } from "@/lib/date";
-import { cleanNote, lastInjection, latestWeight, parseKg, type DietStore } from "@/lib/store";
+import {
+  appendNoteToken,
+  cleanNote,
+  lastInjection,
+  latestWeight,
+  NOTE_SEP,
+  noteTokens,
+  parseKg,
+  type DietStore,
+} from "@/lib/store";
 import { CATEGORIES, NOTE_MAX, NOTE_PRESETS, type Category } from "@/lib/types";
 
 const SAVED_FEEDBACK_MS = 1200;
@@ -41,9 +50,28 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
   const note = day?.note ?? "";
   const base = weight ?? latestWeight(data, selected) ?? data.goalWeight + 5;
 
+  const isToday = selected === todayKey();
   const lastInj = lastInjection(data, selected, { strict: true });
   const injectedToday = (day?.logs.injection?.length ?? 0) > 0;
-  const injectionDue = !!lastInj && !injectedToday && lastInj.daysAgo >= INJECTION_INTERVAL_DAYS;
+  // The reminder is about *today*: browsing a past/future day never shows "주사 예정일".
+  const injectionDue = isToday && !!lastInj && !injectedToday && lastInj.daysAgo >= INJECTION_INTERVAL_DAYS;
+
+  // Publish the bar's real height as --quickbar-h so the page can reserve exactly that much
+  // bottom space (collapsed ≈ 56px, expanded ≈ 200–260px, + reminder strip).
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const apply = () => root.style.setProperty("--quickbar-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--quickbar-h");
+    };
+  }, []);
 
   // Open straight on the injection tab on an injection day; otherwise on the meal for this hour.
   const [cat, setCat] = useState<Mode>(() => (injectionDue ? "injection" : defaultCategory()));
@@ -84,15 +112,33 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
     if (v !== null) setWeight(selected, v);
     setDraft(null);
   };
-  /** Note mode appends to the day's note ("회식 · 붓기"), skipping duplicates and the length cap. */
-  const appendNote = (value: string) => {
-    const v = cleanNote(value);
-    if (!v || note.includes(v)) return false;
-    const next = note ? `${note} · ${v}` : v;
-    if (next.length > NOTE_MAX) return false;
-    setNote(selected, next);
-    return true;
+  /** Short status line under the chips (duplicate / length limit); auto-clears. */
+  const [hint, setHint] = useState<{ text: string; warn: boolean } | null>(null);
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (hintTimer.current) clearTimeout(hintTimer.current);
+    },
+    []
+  );
+  const showHint = (text: string, warn: boolean) => {
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+    setHint({ text, warn });
+    hintTimer.current = setTimeout(() => setHint(null), 1800);
   };
+
+  /** Note mode appends a " · " segment ("회식 · 붓기"); duplicates are checked per segment. */
+  const appendNote = (value: string) => {
+    const r = appendNoteToken(note, value);
+    if (r.ok) {
+      setNote(selected, r.next);
+      return true;
+    }
+    if (r.reason === "dup") showHint(`'${cleanNote(value)}' 이미 있어요`, false);
+    if (r.reason === "max") showHint(`${NOTE_MAX}자 한도 — 메모를 줄여 주세요 (${note.length}/${NOTE_MAX})`, true);
+    return false;
+  };
+  const noteParts = noteTokens(note);
 
   const submit = (value = text) => {
     if (!value.trim()) return;
@@ -108,6 +154,12 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
   /** Tag chip: injection tags merge into one record; note presets append; others add a line. */
   const tapTag = (t: string) => {
     if (cat === "note") {
+      // presets toggle: a chip that is already in the note is removed again
+      if (noteParts.includes(t)) {
+        setNote(selected, noteParts.filter((x) => x !== t).join(NOTE_SEP));
+        showHint(`'${t}' 뺐어요`, false);
+        return;
+      }
       if (appendNote(t)) flashSaved();
       return;
     }
@@ -119,12 +171,11 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
     submit(t);
   };
 
-  const isToday = selected === todayKey();
   const count = cat === "note" ? (note ? 1 : 0) : (day?.logs[cat]?.length ?? 0);
   const chips = cat === "note" ? NOTE_PRESETS : data.tags[cat];
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-ink bg-paper pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_0_0_rgba(0,0,0,0.08)] md:hidden">
+    <div ref={rootRef} className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-ink bg-paper pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_0_0_rgba(0,0,0,0.08)] md:hidden">
       {/* Row 0: injection-day reminder */}
       <AnimatePresence initial={false}>
         {injectionDue && lastInj && (
@@ -257,28 +308,50 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
                   type="button"
                   whileTap={{ scale: 0.9 }}
                   onClick={() => submit(lastInj.text)}
-                  className="h-8 shrink-0 border-2 border-ink bg-blaze px-2.5 font-mono text-xs font-bold"
+                  className="h-9 shrink-0 border-2 border-ink bg-blaze px-2.5 font-mono text-xs font-bold"
                   title={lastInj.text}
                 >
                   ↺ 지난번과 동일
                 </motion.button>
               )}
-              {chips.map((t) => (
-                <motion.button
-                  key={t}
-                  type="button"
-                  whileTap={{ scale: 0.9, backgroundColor: "#CCFF00" }}
-                  onClick={() => tapTag(t)}
-                  className="h-8 shrink-0 border-2 border-ink px-2.5 font-mono text-xs font-bold"
-                >
-                  {t}
-                </motion.button>
-              ))}
+              {chips.map((t) => {
+                const used = cat === "note" && noteParts.includes(t);
+                return (
+                  <motion.button
+                    key={t}
+                    type="button"
+                    aria-pressed={cat === "note" ? used : undefined}
+                    whileTap={{ scale: 0.9, backgroundColor: "#CCFF00" }}
+                    onClick={() => tapTag(t)}
+                    className={`h-9 shrink-0 border-2 border-ink px-2.5 font-mono text-xs font-bold ${used ? "bg-ink text-acid" : ""}`}
+                  >
+                    {used && "✓ "}
+                    {t}
+                  </motion.button>
+                );
+              })}
             </div>
+            <AnimatePresence initial={false}>
+              {hint && (
+                <motion.p
+                  key={hint.text}
+                  role="status"
+                  initial={{ height: 0 }}
+                  animate={{ height: "auto" }}
+                  exit={{ height: 0 }}
+                  className={`overflow-hidden border-b-2 border-ink px-3 font-mono text-[11px] font-bold ${hint.warn ? "bg-blaze" : "bg-acid"}`}
+                >
+                  <span className="block py-1.5">{hint.text}</span>
+                </motion.p>
+              )}
+            </AnimatePresence>
             {cat === "note" && note && (
-              <p className="truncate border-b-2 border-ink px-3 py-1.5 font-mono text-[11px]">
-                <span className="mr-1 bg-ink px-1 font-bold text-acid">NOTE</span>
-                {note}
+              <p className="flex items-center gap-2 border-b-2 border-ink px-3 py-1.5 font-mono text-[11px]">
+                <span className="shrink-0 bg-ink px-1 font-bold text-acid">NOTE</span>
+                <span className="min-w-0 flex-1 truncate">{note}</span>
+                <span className={`shrink-0 tabular-nums ${note.length >= NOTE_MAX * 0.9 ? "font-bold text-blaze" : "opacity-50"}`}>
+                  {note.length}/{NOTE_MAX}
+                </span>
               </p>
             )}
           </motion.div>

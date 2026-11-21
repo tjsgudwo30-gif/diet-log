@@ -33,6 +33,32 @@ export function parseKg(raw: string, min = GOAL_MIN, max = GOAL_MAX): number | n
 /** Single-line, trimmed, length-capped note ("" when empty). */
 export const cleanNote = (raw: string) => raw.replace(/\s+/g, " ").trim().slice(0, NOTE_MAX);
 
+export const NOTE_SEP = " · ";
+
+/** Splits a note into its " · "-separated tokens (trimmed, empty ones dropped). */
+export const noteTokens = (note: string) =>
+  note
+    .split("·")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+export type AppendNoteResult = { ok: true; next: string } | { ok: false; reason: "empty" | "dup" | "max" };
+
+/**
+ * Appends `token` to `note` as a new " · " segment.
+ * Duplicate check is per segment (so "컨디션 좋음" doesn't block "좋음", and vice versa),
+ * and the result must fit in NOTE_MAX.
+ */
+export function appendNoteToken(note: string, token: string): AppendNoteResult {
+  const t = cleanNote(token);
+  if (!t) return { ok: false, reason: "empty" };
+  const tokens = noteTokens(note);
+  if (tokens.some((x) => x === t)) return { ok: false, reason: "dup" };
+  const next = tokens.length ? [...tokens, t].join(NOTE_SEP) : t;
+  if (next.length > NOTE_MAX) return { ok: false, reason: "max" };
+  return { ok: true, next };
+}
+
 /* ---------- Load (corruption-safe) ---------- */
 
 /**

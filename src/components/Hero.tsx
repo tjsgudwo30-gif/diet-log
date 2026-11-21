@@ -2,9 +2,9 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, Target, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { shortLabel, weekdayKo } from "@/lib/date";
-import { latestWeight, prevWeight, type DietStore } from "@/lib/store";
+import { latestWeight, parseKg, prevWeight, type DietStore } from "@/lib/store";
 import { AnimatedNumber, BrutalButton, Cell, Tag } from "./ui";
 
 export function Hero({ store, selected }: { store: DietStore; selected: string }) {
@@ -14,19 +14,40 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
   const goal = data.goalWeight;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [invalid, setInvalid] = useState(false);
+  /** Set by Esc so the blur that follows (input lingers during its exit animation) can't save. */
+  const done = useRef(false);
+  const viewRef = useRef<HTMLButtonElement>(null);
 
   const base = weight ?? latestWeight(data, selected) ?? goal + 5;
   const nudge = (d: number) => setWeight(selected, Math.max(20, Math.min(300, base + d)));
 
   const startEdit = () => {
+    done.current = false;
+    setInvalid(false);
     setDraft(weight !== undefined ? weight.toFixed(1) : "");
     setEditing(true);
   };
-  const commit = () => {
-    const v = parseFloat(draft.replace(",", "."));
-    if (draft.trim() === "") setWeight(selected, undefined);
-    else if (!Number.isNaN(v) && v >= 20 && v <= 300) setWeight(selected, v);
+  const close = (refocus: boolean) => {
+    done.current = true;
     setEditing(false);
+    setInvalid(false);
+    if (refocus) requestAnimationFrame(() => viewRef.current?.focus());
+  };
+  /**
+   * Enter: save a valid value (20–300, "68,4" ok); an invalid one keeps the editor open and flags it.
+   * Blur: save if valid, otherwise quietly keep the old value. Empty input never deletes —
+   * deleting is the explicit "clear" button, so a stray tap can't wipe the day's weight.
+   */
+  const commit = (fromKeyboard: boolean) => {
+    if (done.current) return;
+    const v = draft.trim() === "" ? null : parseKg(draft);
+    if (v === null && draft.trim() !== "" && fromKeyboard) {
+      setInvalid(true);
+      return;
+    }
+    if (v !== null) setWeight(selected, v);
+    close(fromKeyboard);
   };
 
   const delta = weight !== undefined && prev ? weight - prev.weight : undefined;
@@ -44,7 +65,8 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
             <button
               type="button"
               onClick={() => setWeight(selected, undefined)}
-              className="flex items-center gap-1 font-mono text-[11px] uppercase opacity-50 hover:opacity-100"
+              aria-label="이 날의 체중 기록 지우기"
+              className="-my-1.5 flex items-center gap-1 px-2 py-1.5 font-mono text-[11px] uppercase opacity-60 hover:bg-blaze hover:opacity-100"
             >
               <Trash2 size={12} /> clear
             </button>
@@ -64,29 +86,51 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
                     transition={{ duration: 0.12 }}
                     onSubmit={(e) => {
                       e.preventDefault();
-                      commit();
+                      commit(true);
                     }}
                   >
                     <input
                       autoFocus
-                      type="number"
+                      type="text"
                       inputMode="decimal"
-                      step="0.1"
+                      enterKeyHint="done"
+                      autoComplete="off"
+                      aria-label="체중 (kg)"
+                      aria-invalid={invalid || undefined}
+                      aria-describedby="weight-edit-hint"
                       value={draft}
                       placeholder="00.0"
                       onFocus={(e) => e.target.select()}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onBlur={commit}
-                      onKeyDown={(e) => e.key === "Escape" && setEditing(false)}
-                      className="display-tight w-full bg-acid text-[clamp(7rem,19vw,17rem)] outline-none placeholder:text-ink/20"
+                      onChange={(e) => {
+                        setInvalid(false);
+                        setDraft(e.target.value.replace(/[^\d.,]/g, "").slice(0, 6));
+                      }}
+                      onBlur={() => commit(false)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          close(true);
+                        }
+                      }}
+                      className={`display-tight w-full text-[clamp(7rem,19vw,17rem)] outline-none placeholder:text-ink/20 ${invalid ? "bg-blaze" : "bg-acid"}`}
                     />
+                    <p id="weight-edit-hint" role={invalid ? "alert" : undefined} className="mt-1 font-mono text-[11px]">
+                      {invalid ? (
+                        <span className="bg-blaze px-1 font-bold">20~300kg 사이 숫자를 입력하세요 (예: 68.4 또는 68,4)</span>
+                      ) : (
+                        <span className="opacity-60">Enter 저장 · Esc 취소 · 쉼표(,) 입력 가능</span>
+                      )}
+                    </p>
                   </motion.form>
                 ) : (
                   <motion.button
                     key="view"
+                    ref={viewRef}
                     type="button"
                     onClick={startEdit}
                     title="클릭해서 직접 입력"
+                    aria-label={weight !== undefined ? `체중 ${weight.toFixed(1)}kg, 눌러서 수정` : "체중 입력하기"}
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}

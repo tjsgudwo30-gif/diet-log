@@ -82,6 +82,38 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // Focus management: move focus into the dialog on open, give it back to the opener on close.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const id = requestAnimationFrame(() => closeRef.current?.focus());
+    return () => {
+      cancelAnimationFrame(id);
+      opener?.focus?.();
+    };
+  }, [open]);
+
+  /** Keep Tab / Shift+Tab cycling inside the dialog while it is open. */
+  const trapTab = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab" || !dialogRef.current) return;
+    const nodes = dialogRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]):not([type="hidden"]), [tabindex]:not([tabindex="-1"])'
+    );
+    const list = [...nodes].filter((n) => n.offsetParent !== null);
+    if (!list.length) return;
+    const first = list[0];
+    const last = list[list.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
   function done(msg: string) {
     setConfirm(null);
     setError(null);
@@ -104,9 +136,11 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
           onMouseDown={(e) => e.target === e.currentTarget && onClose()}
         >
           <motion.div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="설정"
+            onKeyDown={trapTab}
             initial={{ x: 40, y: -20, opacity: 0, rotate: 1.5 }}
             animate={{ x: 0, y: 0, opacity: 1, rotate: 0 }}
             exit={{ x: 40, opacity: 0 }}
@@ -115,7 +149,13 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
           >
             <div className="flex items-center justify-between border-b-2 border-ink bg-ink px-4 py-3 text-paper">
               <span className="font-mono text-xs font-bold uppercase tracking-[0.14em]">[ Settings ]</span>
-              <button type="button" onClick={onClose} aria-label="닫기" className="hover:text-acid">
+              <button
+                ref={closeRef}
+                type="button"
+                onClick={onClose}
+                aria-label="설정 닫기"
+                className="-my-2 -mr-2 flex h-10 w-10 items-center justify-center hover:bg-acid hover:text-ink focus-visible:outline-acid"
+              >
                 <X size={20} strokeWidth={2.5} />
               </button>
             </div>

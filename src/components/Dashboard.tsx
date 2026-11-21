@@ -56,7 +56,7 @@ export function Dashboard() {
   }
 
   return (
-    <main className="mx-auto max-w-[1600px] p-2 pb-[290px] sm:p-5 sm:pb-[290px] md:pb-5">
+    <main className="mx-auto max-w-[1600px] p-2 pb-[calc(var(--quickbar-h,0px)+1.5rem)] transition-[padding] duration-200 sm:p-5 sm:pb-[calc(var(--quickbar-h,0px)+1.5rem)] md:pb-5">
       <div className="bento grid-cols-6 md:grid-cols-12">
         <Header
           selected={selected}

@@ -25,6 +25,16 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Keyboard focus: a hard 2px ink ring (acid on dark cells), never on mouse/touch focus */
+:where(button, a, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+:where(.bg-ink) :where(button, input):focus-visible,
+:where(.bg-ink):where(button):focus-visible {
+  outline-color: var(--color-acid);
+}
+
 ::selection {
   background: var(--color-acid);
   color: var(--color-ink);
