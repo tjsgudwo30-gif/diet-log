@@ -12,13 +12,14 @@ import {
   Plus,
   Sun,
   Syringe,
+  Trash2,
   UtensilsCrossed,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
-import { appendNoteToken, lastInjection, NOTE_SEP, noteTokens, type DietStore } from "@/lib/store";
+import { appendNoteToken, hasDayRecord, lastInjection, NOTE_SEP, noteTokens, type DietStore } from "@/lib/store";
 import { shortLabel, todayKey, weekday } from "@/lib/date";
-import { MAIN_CATEGORIES, NOTE_MAX, NOTE_PRESETS, type Category } from "@/lib/types";
+import { MAIN_CATEGORIES, NOTE_MAX, NOTE_PRESETS, type Category, type DayEntry } from "@/lib/types";
 import { Chip, Dot, Label } from "./ui";
 
 export const CATEGORY_ICONS: Record<Category, ComponentType<{ size?: number; strokeWidth?: number }>> = {
@@ -109,11 +110,14 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
             <p className="max-w-sm font-mono text-[11px] leading-relaxed text-ink/55 md:text-right">
               먹은 것과 움직인 것, 그리고 몸 상태와 투약을 하루 단위로 남깁니다. 항목을 누르면 바로 수정돼요.
             </p>
-            {!isToday && (
-              <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-ink/55">
-                <Dot tone="blaze" /> 과거 기록 편집 중
-              </span>
-            )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 md:justify-end">
+              {!isToday && (
+                <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-ink/55">
+                  <Dot tone="blaze" /> 과거 기록 편집 중
+                </span>
+              )}
+              <ClearDayControl key={selected} store={store} selected={selected} />
+            </div>
           </div>
         </div>
       </div>
@@ -132,6 +136,112 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
         <LogColumn cat="injection" label="주사" store={store} selected={selected} wide />
       </div>
     </>
+  );
+}
+
+/**
+ * "이 날 기록 삭제": only shown when the day has something to delete.
+ * idle → confirm (취소 focused by default, Esc cancels) → done (6 s undo).
+ * Goal weight and tags are untouched (see store.clearDay).
+ */
+function ClearDayControl({ store, selected }: { store: DietStore; selected: string }) {
+  const [phase, setPhase] = useState<"idle" | "confirm" | "done">("idle");
+  const [backup, setBackup] = useState<DayEntry | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const has = hasDayRecord(store.data, selected);
+
+  useEffect(
+    () => () => {
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+    },
+    []
+  );
+  useEffect(() => {
+    if (phase === "confirm") cancelRef.current?.focus();
+  }, [phase]);
+
+  const cancel = () => {
+    setPhase("idle");
+    requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+  const confirm = () => {
+    setBackup(store.data.days[selected] ?? null);
+    store.clearDay(selected);
+    setPhase("done");
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => {
+      setPhase("idle");
+      setBackup(null);
+    }, 6000);
+  };
+  const undo = () => {
+    if (backup) store.restoreDay(selected, backup);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setBackup(null);
+    setPhase("idle");
+  };
+
+  if (phase === "done") {
+    return (
+      <span role="status" className="flex items-center gap-2 font-mono text-[11px] text-ink/60">
+        {shortLabel(selected)} 기록을 삭제했어요
+        <button type="button" onClick={undo} className="-my-2 px-2 py-2 font-bold text-ink underline underline-offset-4">
+          되돌리기
+        </button>
+      </span>
+    );
+  }
+
+  if (phase === "confirm") {
+    return (
+      <div
+        role="alertdialog"
+        aria-label="이 날 기록 삭제 확인"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            cancel();
+          }
+        }}
+        className="flex w-full max-w-sm flex-col gap-2 border-l-[3px] border-blaze py-1 pl-3 md:items-end md:text-right"
+      >
+        <p className="font-mono text-[11px] leading-relaxed text-ink/70">
+          <b className="text-ink">{shortLabel(selected)}</b>의 체중 · 식단 · 운동 · 주사 · 컨디션을 모두 지울까요?
+          <span className="block text-ink/45">목표 체중과 태그는 그대로 유지돼요.</span>
+        </p>
+        <span className="flex gap-2">
+          <button
+            ref={cancelRef}
+            type="button"
+            onClick={cancel}
+            className="h-9 border border-ink/25 px-3 font-mono text-[11px] font-bold transition-colors hover:border-ink md:h-8"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={confirm}
+            className="h-9 border border-blaze bg-blaze px-3 font-mono text-[11px] font-bold text-ink transition-colors hover:bg-ink hover:text-paper hover:border-ink md:h-8"
+          >
+            삭제
+          </button>
+        </span>
+      </div>
+    );
+  }
+
+  if (!has) return null;
+  return (
+    <button
+      ref={triggerRef}
+      type="button"
+      onClick={() => setPhase("confirm")}
+      className="-my-2 flex items-center gap-1.5 px-1 py-2 font-mono text-[11px] text-ink/50 transition-colors hover:text-blaze"
+    >
+      <Trash2 size={12} strokeWidth={1.75} /> 이 날 기록 삭제
+    </button>
   );
 }
 

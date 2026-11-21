@@ -249,6 +249,26 @@ export function useDietStore() {
   const resetAll = useCallback(() => setData(emptyData()), []);
   const replaceAll = useCallback((next: AppData) => setData(next), []);
 
+  /**
+   * Removes everything recorded on `key` (weight, all logs incl. injection, condition note).
+   * Goal weight and tags are app-wide and stay untouched.
+   * (Callers that want undo should read `data.days[key]` before calling — see restoreDay.)
+   */
+  const clearDay = useCallback((key: string) => {
+    setData((prev) => {
+      if (!prev.days[key]) return prev;
+      const days = { ...prev.days };
+      delete days[key];
+      return { ...prev, days };
+    });
+  }, []);
+
+  /** Puts a previously cleared day back (undo for clearDay). */
+  const restoreDay = useCallback(
+    (key: string, entry: DayEntry) => setData((prev) => ({ ...prev, days: { ...prev.days, [key]: entry } })),
+    []
+  );
+
   return {
     data,
     ready,
@@ -264,6 +284,8 @@ export function useDietStore() {
     fillSample,
     resetAll,
     replaceAll,
+    clearDay,
+    restoreDay,
   };
 }
 
@@ -351,6 +373,16 @@ export function summarize(data: AppData) {
 
 const hasAnything = (d: DayEntry | undefined) =>
   !!d && (d.weight !== undefined || !!d.note || Object.values(d.logs).some((l) => l && l.length));
+
+/** True when `key` has any record: weight, a meal/exercise/injection log, or a condition note. */
+export function hasDayRecord(data: AppData, key: string): boolean {
+  return hasAnything(data.days[key]);
+}
+
+/** True when `key` has at least one injection log (used for calendar markers). */
+export function hasInjection(data: AppData, key: string): boolean {
+  return (data.days[key]?.logs.injection?.length ?? 0) > 0;
+}
 
 /** Consecutive days with any record, ending today (or yesterday if today is empty). */
 export function computeStreak(data: AppData): number {

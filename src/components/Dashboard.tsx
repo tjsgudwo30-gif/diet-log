@@ -14,6 +14,7 @@ export function Dashboard() {
   const store = useDietStore();
   const [selected, setSelected] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [pulse, setPulse] = useState(0);
 
   // Chart point click: jump to that day, then bring its diet/exercise log into view.
@@ -34,18 +35,20 @@ export function Dashboard() {
   const move = useCallback((d: number) => setSelected((s) => (s ? addDays(s, d) : s)), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
-  // Keyboard: ← / → to move days, T for today (ignored while typing)
+  // Keyboard: ← / → to move days, T for today.
+  // Paused while typing, while a modifier is held, and while settings or the calendar is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (t.closest("input, textarea, [contenteditable]") || settingsOpen) return;
+      if (settingsOpen || calendarOpen || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (t.closest("input, textarea, [contenteditable]")) return;
       if (e.key === "ArrowLeft") move(-1);
       else if (e.key === "ArrowRight") move(1);
       else if (e.key.toLowerCase() === "t") setSelected(todayKey());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [move, settingsOpen]);
+  }, [move, settingsOpen, calendarOpen]);
 
   if (!store.ready || !selected) {
     return (
@@ -63,7 +66,14 @@ export function Dashboard() {
           onMove={move}
           onToday={() => setSelected(todayKey())}
           streak={computeStreak(store.data)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => {
+            setCalendarOpen(false);
+            setSettingsOpen(true);
+          }}
+          data={store.data}
+          calendarOpen={calendarOpen}
+          onCalendarOpenChange={setCalendarOpen}
+          onPick={setSelected}
         />
         <Hero store={store} selected={selected} />
         <TrendChart store={store} selected={selected} onSelect={selectFromChart} />

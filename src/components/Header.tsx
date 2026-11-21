@@ -1,8 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Settings2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, Settings2 } from "lucide-react";
+import { useCallback, useRef } from "react";
 import { fromKey, todayKey, weekday } from "@/lib/date";
+import type { AppData } from "@/lib/types";
+import { CalendarPopover } from "./CalendarPopover";
 import { AnimatedNumber, Dot, Label } from "./ui";
 
 /** The five things this tracker records, shown under the wordmark. */
@@ -19,13 +22,24 @@ export function Header({
   onToday,
   streak,
   onOpenSettings,
+  data,
+  calendarOpen,
+  onCalendarOpenChange,
+  onPick,
 }: {
   selected: string;
   onMove: (delta: number) => void;
   onToday: () => void;
   streak: number;
   onOpenSettings: () => void;
+  data: AppData;
+  /** Lifted to Dashboard so global ← → T shortcuts pause while the calendar is open. */
+  calendarOpen: boolean;
+  onCalendarOpenChange: (open: boolean) => void;
+  onPick: (key: string) => void;
 }) {
+  const calTrigger = useRef<HTMLButtonElement>(null);
+  const closeCalendar = useCallback(() => onCalendarOpenChange(false), [onCalendarOpenChange]);
   const d = fromKey(selected);
   const ym = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}`;
   const isToday = selected === todayKey();
@@ -91,7 +105,9 @@ export function Header({
       </div>
 
       {/* Date navigation */}
-      <div className="col-span-6 flex flex-col justify-between gap-3 px-4 py-3 md:col-span-4 md:col-start-6 md:row-start-1 md:px-6 md:pt-5 md:pb-4">
+      <div
+        className={`relative col-span-6 flex flex-col justify-between gap-3 px-4 py-3 md:col-span-4 md:col-start-6 md:row-start-1 md:px-6 md:pt-5 md:pb-4 ${calendarOpen ? "z-30" : ""}`}
+      >
         <div className="hidden items-center justify-between md:flex">
           <Label>기록 날짜</Label>
           <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.12em]">
@@ -103,10 +119,24 @@ export function Header({
           <NavButton label="이전 날" onClick={() => onMove(-1)}>
             <ArrowLeft size={20} strokeWidth={1.75} />
           </NavButton>
-          <div className="flex flex-1 items-baseline justify-center gap-2">
+          {/* The date itself opens the month calendar */}
+          <button
+            ref={calTrigger}
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={calendarOpen}
+            aria-label={`${selected} — 달력 열기`}
+            onClick={() => onCalendarOpenChange(!calendarOpen)}
+            className={`group flex min-h-11 flex-1 items-baseline justify-center gap-2 transition-colors ${
+              calendarOpen ? "bg-ink text-paper" : "hover:bg-ink/5"
+            }`}
+          >
             <AnimatedNumber value={d.getDate()} decimals={0} className="display-tight text-[2.75rem] md:text-[3.25rem]" />
-            <span className="font-mono text-[11px] font-bold tracking-[0.12em]">{weekday(selected)}</span>
-          </div>
+            <span className="flex items-center gap-1.5 font-mono text-[11px] font-bold tracking-[0.12em]">
+              {weekday(selected)}
+              <CalendarDays size={14} strokeWidth={1.75} className={calendarOpen ? "" : "text-ink/50 group-hover:text-ink"} />
+            </span>
+          </button>
           <NavButton label="다음 날" onClick={() => onMove(1)}>
             <ArrowRight size={20} strokeWidth={1.75} />
           </NavButton>
@@ -119,6 +149,20 @@ export function Header({
         >
           {isToday ? "오늘" : "← 오늘로 이동"}
         </button>
+        <AnimatePresence>
+          {calendarOpen && (
+            <CalendarPopover
+              data={data}
+              selected={selected}
+              triggerRef={calTrigger}
+              onClose={closeCalendar}
+              onPick={(k) => {
+                onPick(k);
+                closeCalendar();
+              }}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </>
   );
