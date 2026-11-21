@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f4f4f0;
+  --color-ink: #000000;
+  --color-acid: #ccff00;
+  --color-blaze: #ff4d00;
+
+  --font-display: var(--font-archivo), var(--font-noto-kr), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-noto-kr), var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), var(--font-noto-kr), ui-monospace, "Cascadia Mono", monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--color-acid);
+  color: var(--color-ink);
+}
+
+/* Bento grid: 2px black rules drawn by the gap */
+@layer components {
+  .bento {
+    display: grid;
+    gap: 2px;
+    background: var(--color-ink);
+    border: 2px solid var(--color-ink);
+  }
+  .bento > * {
+    background: var(--color-paper);
+  }
+}
+
+.display-tight {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-stretch: 75%;
+  letter-spacing: -0.04em;
+  line-height: 0.82;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.recharts-wrapper:focus,
+.recharts-surface:focus,
+.recharts-wrapper *:focus {
+  outline: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
