@@ -29,4 +29,6 @@ for (const [src, out, size] of jobs) {
 // Next.js file conventions: app/icon.svg → favicon, app/apple-icon.png → apple-touch-icon
 await copyFile(path.join(dir, "icon.svg"), path.join(root, "src", "app", "icon.svg"));
 await copyFile(path.join(dir, "apple-touch-icon.png"), path.join(root, "src", "app", "apple-icon.png"));
-console.log("✓ app/icon.svg, app/apple-icon.png");
+// PNG favicon fallback for browsers without SVG favicon support
+await copyFile(path.join(dir, "icon-192.png"), path.join(root, "src", "app", "icon1.png"));
+console.log("✓ app/icon.svg, app/icon1.png, app/apple-icon.png");

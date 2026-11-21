@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Database, Download, Minus, Plus, RotateCcw, Target, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { makeBackup, parseBackup, summarize, type DietStore } from "@/lib/store";
+import { GOAL_MAX, GOAL_MIN, makeBackup, parseBackup, parseKg, summarize, type DietStore } from "@/lib/store";
 import { todayKey } from "@/lib/date";
 import type { AppData } from "@/lib/types";
 import { AnimatedNumber, BrutalButton } from "./ui";
@@ -15,6 +15,35 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** null = not editing → input shows the stored goal; string = what the user is typing. */
+  const [goalDraft, setGoalDraft] = useState<string | null>(null);
+  const [goalError, setGoalError] = useState<string | null>(null);
+
+  // Clear any pending flash timer on unmount.
+  useEffect(
+    () => () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    },
+    []
+  );
+
+  const commitGoal = () => {
+    if (goalDraft === null) return;
+    const v = parseKg(goalDraft, GOAL_MIN, GOAL_MAX);
+    if (v === null) {
+      setGoalError(`${GOAL_MIN}~${GOAL_MAX}kg 사이의 숫자를 입력하세요`);
+    } else {
+      setGoal(v);
+      setGoalError(null);
+    }
+    setGoalDraft(null); // fall back to the stored (possibly unchanged) value
+  };
+  const stepGoal = (d: number) => {
+    setGoalDraft(null);
+    setGoalError(null);
+    setGoal(data.goalWeight + d);
+  };
   const recordCount = Object.values(data.days).filter((d) => d.weight !== undefined).length;
 
   const exportJson = () => {
@@ -57,8 +86,12 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
     setConfirm(null);
     setError(null);
     setFlash(msg);
-    setTimeout(() => setFlash(null), 1600);
-  };
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => {
+      setFlash(null);
+      flashTimer.current = null;
+    }, 1600);
+  }
 
   return (
     <AnimatePresence>
@@ -93,28 +126,58 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
                 <Target size={13} /> 목표 체중
               </p>
               <div className="flex items-center gap-3">
-                <BrutalButton className="h-12 w-12" onClick={() => setGoal(data.goalWeight - 0.5)} aria-label="목표 -0.5">
+                <BrutalButton
+                  className="h-12 w-12"
+                  onClick={() => stepGoal(-0.5)}
+                  disabled={data.goalWeight <= GOAL_MIN}
+                  aria-label="목표 -0.5"
+                >
                   <Minus size={18} strokeWidth={3} />
                 </BrutalButton>
                 <div className="flex flex-1 items-end justify-center gap-1">
                   <input
-                    type="number"
-                    step="0.1"
-                    key={data.goalWeight}
-                    defaultValue={data.goalWeight.toFixed(1)}
-                    onBlur={(e) => {
-                      const v = parseFloat(e.target.value);
-                      if (!Number.isNaN(v) && v > 20 && v < 300) setGoal(v);
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    aria-label="목표 체중 (kg)"
+                    aria-invalid={goalError ? true : undefined}
+                    value={goalDraft ?? data.goalWeight.toFixed(1)}
+                    onFocus={(e) => {
+                      setGoalDraft(data.goalWeight.toFixed(1));
+                      const el = e.currentTarget;
+                      requestAnimationFrame(() => el.select());
                     }}
-                    onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                    className="display-tight w-40 bg-transparent text-center text-7xl outline-none focus:bg-acid"
+                    onChange={(e) => {
+                      // allow only digits and a single . or , while typing
+                      const v = e.target.value.replace(/[^\d.,]/g, "");
+                      if (/^\d{0,3}([.,]\d?)?$/.test(v)) setGoalDraft(v);
+                    }}
+                    onBlur={commitGoal}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                      if (e.key === "Escape") {
+                        e.stopPropagation(); // don't close the modal, just cancel the edit
+                        setGoalDraft(null);
+                        setGoalError(null);
+                        requestAnimationFrame(() => (e.target as HTMLInputElement).blur());
+                      }
+                    }}
+                    className={`display-tight w-40 bg-transparent text-center text-7xl outline-none focus:bg-acid ${goalError ? "text-blaze" : ""}`}
                   />
                   <span className="display-tight pb-1 text-2xl">KG</span>
                 </div>
-                <BrutalButton className="h-12 w-12" onClick={() => setGoal(data.goalWeight + 0.5)} aria-label="목표 +0.5">
+                <BrutalButton
+                  className="h-12 w-12"
+                  onClick={() => stepGoal(0.5)}
+                  disabled={data.goalWeight >= GOAL_MAX}
+                  aria-label="목표 +0.5"
+                >
                   <Plus size={18} strokeWidth={3} />
                 </BrutalButton>
               </div>
+              <p className={`mt-2 font-mono text-[10px] ${goalError ? "font-bold text-blaze" : "opacity-50"}`} role={goalError ? "alert" : undefined}>
+                {goalError ?? `${GOAL_MIN}~${GOAL_MAX}kg · 쉼표(,)나 마침표(.) 모두 입력 가능 · Enter 저장 · Esc 취소`}
+              </p>
             </section>
 
             {/* Data */}
@@ -158,7 +221,8 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
                         ))}
                         <div className="col-span-3 bg-paper px-2 py-1">
                           {pendingSummary.from ? `${pendingSummary.from} → ${pendingSummary.to}` : "기록 없음"} · 목표{" "}
-                          {pending!.goalWeight.toFixed(1)}kg
+                          {pending!.goalWeight.toFixed(1)}kg · 주사 {pendingSummary.injections}회 · 메모{" "}
+                          {pendingSummary.notes}일
                         </div>
                       </dl>
                     )}

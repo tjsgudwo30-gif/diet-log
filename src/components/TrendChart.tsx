@@ -2,11 +2,25 @@
 
 import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
-import { Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { addDays, shortLabel, weekdayKo } from "@/lib/date";
-import type { DietStore } from "@/lib/store";
-import { CATEGORIES, type AppData } from "@/lib/types";
-import { Cell } from "./ui";
+import {
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  type ActiveDotProps,
+  type DotItemDotProps,
+  type MouseHandlerDataParam,
+  type TooltipContentProps,
+} from "recharts";
+import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
+import { addDays, isDateKey, shortLabel, weekdayKo } from "@/lib/date";
+import { weeklyStats, windowAverage, type DietStore, type WeeklyStats } from "@/lib/store";
+import { MAIN_CATEGORIES, type AppData } from "@/lib/types";
+import { Syringe } from "lucide-react";
+import { AnimatedNumber, Cell } from "./ui";
 
 type Range = "7" | "30" | "all";
 const RANGES: { key: Range; label: string }[] = [
@@ -18,6 +32,31 @@ const RANGES: { key: Range; label: string }[] = [
 interface Point {
   key: string;
   weight: number | null;
+  /** Trailing 7-day average (needs ≥ 3 weigh-ins in the window). */
+  ma7: number | null;
+  /** Day has an injection record. */
+  inj: boolean;
+}
+
+const isPoint = (v: unknown): v is Point =>
+  !!v &&
+  typeof v === "object" &&
+  isDateKey((v as Point).key) &&
+  ((v as Point).weight === null || typeof (v as Point).weight === "number");
+
+/** Date key under the pointer: prefer the hovered index into our own series, fall back to the axis label. */
+function resolveKey(state: MouseHandlerDataParam | undefined, series: Point[]): string | null {
+  if (!state) return null;
+  const i = typeof state.activeIndex === "number" ? state.activeIndex : Number(state.activeIndex);
+  if (Number.isInteger(i) && i >= 0 && i < series.length) return series[i].key;
+  return isDateKey(state.activeLabel) ? state.activeLabel : null;
+}
+
+/** Date key for the tooltip: read it from the hovered point's payload, fall back to the label. */
+function tooltipKey(p: TooltipContentProps<ValueType, NameType>): string | null {
+  const payload: unknown = p.payload?.[0]?.payload;
+  if (isPoint(payload)) return payload.key;
+  return isDateKey(p.label) ? p.label : null;
 }
 
 function buildSeries(data: AppData, selected: string, range: Range): Point[] {
@@ -38,9 +77,45 @@ function buildSeries(data: AppData, selected: string, range: Range): Point[] {
   }
   const out: Point[] = [];
   for (let k = start, guard = 0; k <= end && guard < 2000; k = addDays(k, 1), guard++) {
-    out.push({ key: k, weight: data.days[k]?.weight ?? null });
+    const d = data.days[k];
+    const win = windowAverage(data, k, 7);
+    out.push({
+      key: k,
+      weight: d?.weight ?? null,
+      ma7: win && win.count >= 3 ? Math.round(win.avg * 100) / 100 : null,
+      inj: (d?.logs.injection?.length ?? 0) > 0,
+    });
   }
   return out;
+}
+
+/** Diamond marker path centred on (cx, cy). */
+const diamond = (cx: number, cy: number, r: number) => `M${cx} ${cy - r}L${cx + r} ${cy}L${cx} ${cy + r}L${cx - r} ${cy}Z`;
+
+/** 7D AVG bento cell: average of the 7 days ending at `selected` and Δ vs. the 7 days before. */
+function WeeklyCell({ stats }: { stats: WeeklyStats }) {
+  const { current, previous, delta } = stats;
+  const tone = delta === null ? "bg-paper" : delta < 0 ? "bg-acid" : delta > 0 ? "bg-blaze" : "bg-paper";
+  return (
+    <div className="col-span-2 flex flex-col justify-between gap-2 bg-ink px-4 py-3 text-paper lg:col-span-1">
+      <dt className="flex items-center justify-between font-mono text-[11px] tracking-[0.14em]">
+        <span className="text-acid">7D AVG</span>
+        <span className="opacity-60">{current ? `${current.count}/7일` : "—"}</span>
+      </dt>
+      <dd className="flex flex-wrap items-end justify-between gap-2">
+        <span className="display-tight text-4xl lg:text-5xl">
+          {current ? <AnimatedNumber value={current.avg} /> : "—"}
+        </span>
+        <span className={`border-2 border-paper px-1.5 py-0.5 font-mono text-[11px] font-bold text-ink ${tone}`}>
+          {delta === null
+            ? previous
+              ? "Δ 7D —"
+              : "이전 7일 기록 없음"
+            : `Δ 7D ${delta < 0 ? "▼" : delta > 0 ? "▲" : "■"} ${delta > 0 ? "+" : ""}${delta.toFixed(1)}`}
+        </span>
+      </dd>
+    </div>
+  );
 }
 
 export function TrendChart({
@@ -66,6 +141,8 @@ export function TrendChart({
   const goal = data.goalWeight;
   const lo = Math.floor(Math.min(min, goal >= min - 1.5 ? goal : min) - 0.5);
   const hi = Math.ceil(max + 0.5);
+  const weekly = useMemo(() => weeklyStats(data, selected), [data, selected]);
+  const injDays = series.filter((p) => p.inj).map((p) => p.key);
 
   return (
     <Cell
@@ -95,20 +172,41 @@ export function TrendChart({
       }
     >
       <div className="grid flex-1 grid-cols-1 lg:grid-cols-[220px_1fr]">
-        <dl className="grid grid-cols-3 gap-px border-y-2 border-ink bg-ink mt-3 lg:grid-cols-1 lg:border-y-0 lg:border-r-2 lg:mt-3">
+        <dl className="mt-3 grid grid-cols-2 gap-px border-y-2 border-ink bg-ink sm:grid-cols-[1fr_1fr_1fr] lg:grid-cols-1 lg:border-y-0 lg:border-r-2">
           {[
             ["LOW", hasData ? min.toFixed(1) : "—"],
             ["HIGH", hasData ? max.toFixed(1) : "—"],
             ["Δ PERIOD", hasData ? `${change > 0 ? "+" : ""}${change.toFixed(1)}` : "—"],
           ].map(([k, v], i) => (
-            <div key={k} className={`flex flex-col justify-between bg-paper px-4 py-3 ${i === 2 && change < 0 ? "!bg-acid" : i === 2 && change > 0 ? "!bg-blaze" : ""}`}>
+            <div
+              key={k}
+              className={`flex flex-col justify-between bg-paper px-4 py-2.5 ${i === 2 ? "col-span-2 sm:col-span-1" : ""} ${i === 2 && change < 0 ? "!bg-acid" : i === 2 && change > 0 ? "!bg-blaze" : ""}`}
+            >
               <dt className="font-mono text-[11px] tracking-[0.14em]">{k}</dt>
-              <dd className="display-tight text-3xl md:text-4xl lg:text-5xl">{v}</dd>
+              <dd className="display-tight text-3xl md:text-4xl">{v}</dd>
             </div>
           ))}
+          <div className="col-span-2 grid sm:col-span-3 lg:col-span-1">
+            <WeeklyCell stats={weekly} />
+          </div>
         </dl>
 
-        <div className="relative h-[240px] px-1 pt-4 pb-2 md:h-[320px] md:px-2">
+        <div className="relative h-[260px] px-1 pt-6 pb-2 md:h-[340px] md:px-2">
+          {/* legend */}
+          <div className="pointer-events-none absolute top-1 left-3 z-10 flex gap-3 font-mono text-[10px] font-bold uppercase">
+            <span className="flex items-center gap-1">
+              <svg width="18" height="8" aria-hidden>
+                <line x1="0" y1="4" x2="18" y2="4" stroke="#000" strokeWidth="1.5" strokeDasharray="3 3" />
+              </svg>
+              7D AVG
+            </span>
+            <span className="flex items-center gap-1">
+              <svg width="10" height="10" aria-hidden>
+                <path d={diamond(5, 5, 4)} fill="#FF4D00" stroke="#000" strokeWidth="1.5" />
+              </svg>
+              주사
+            </span>
+          </div>
           {series.filter((p) => p.weight !== null).length < 1 ? (
             <div className="flex h-full items-center justify-center font-mono text-sm opacity-60">
               — 이 기간에 기록이 없습니다. 설정에서 샘플 데이터를 채워보세요.
@@ -118,9 +216,8 @@ export function TrendChart({
               <LineChart
                 data={series}
                 margin={{ top: 16, right: 24, bottom: 0, left: 0 }}
-                onClick={(s) => {
-                  const i = Number(s?.activeIndex);
-                  const k = Number.isInteger(i) ? series[i]?.key : undefined;
+                onClick={(state) => {
+                  const k = resolveKey(state, series);
                   if (k) onSelect(k);
                 }}
               >
@@ -158,10 +255,28 @@ export function TrendChart({
                     fontWeight: 700,
                   }}
                 />
+                {/* injection days: thin orange guides, visible even on days without a weigh-in */}
+                {injDays.map((k) => (
+                  <ReferenceLine key={`inj-${k}`} x={k} stroke="#FF4D00" strokeWidth={1.5} strokeOpacity={0.55} ifOverflow="hidden" />
+                ))}
                 <ReferenceLine x={selected} stroke="#000" strokeWidth={1} strokeDasharray="2 3" ifOverflow="hidden" />
+                <Line
+                  type="monotone"
+                  dataKey="ma7"
+                  stroke="#000"
+                  strokeWidth={1.5}
+                  strokeOpacity={0.55}
+                  strokeDasharray="4 4"
+                  dot={false}
+                  activeDot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
                 <Tooltip
                   cursor={{ stroke: "#000", strokeWidth: 1.5 }}
-                  content={(p) => <ChartTooltip active={p.active} label={p.label as string} data={data} />}
+                  content={(p: TooltipContentProps<ValueType, NameType>) => (
+                    <ChartTooltip active={p.active} dayKey={tooltipKey(p)} data={data} />
+                  )}
                   isAnimationActive={false}
                 />
                 <Line
@@ -171,10 +286,18 @@ export function TrendChart({
                   strokeWidth={2.5}
                   connectNulls
                   isAnimationActive={false}
-                  dot={(props) => {
-                    const { cx, cy, payload, index } = props as { cx?: number; cy?: number; payload: Point; index: number };
-                    if (cx == null || cy == null || payload.weight == null) return <g key={index} />;
+                  dot={(props: DotItemDotProps) => {
+                    const { cx, cy, payload, index } = props;
+                    if (typeof cx !== "number" || typeof cy !== "number" || !isPoint(payload) || payload.weight === null)
+                      return <g key={index} />;
                     const sel = payload.key === selected;
+                    if (payload.inj) {
+                      // injection day → orange diamond (acid when selected)
+                      const r = sel ? 9 : series.length > 40 ? 5 : 7;
+                      return (
+                        <path key={index} d={diamond(cx, cy, r)} fill={sel ? "#CCFF00" : "#FF4D00"} stroke="#000" strokeWidth={2} />
+                      );
+                    }
                     const s = sel ? 12 : series.length > 40 ? 4 : 7;
                     return (
                       <rect
@@ -189,9 +312,21 @@ export function TrendChart({
                       />
                     );
                   }}
-                  activeDot={(props: { cx?: number; cy?: number }) => {
-                    const { cx = 0, cy = 0 } = props;
-                    return <rect x={cx - 8} y={cy - 8} width={16} height={16} fill="#FF4D00" stroke="#000" strokeWidth={2} style={{ cursor: "pointer" }} />;
+                  activeDot={(props: ActiveDotProps) => {
+                    const { cx, cy } = props;
+                    if (typeof cx !== "number" || typeof cy !== "number") return <g />;
+                    return (
+                      <rect
+                        x={cx - 8}
+                        y={cy - 8}
+                        width={16}
+                        height={16}
+                        fill="#FF4D00"
+                        stroke="#000"
+                        strokeWidth={2}
+                        style={{ cursor: "pointer" }}
+                      />
+                    );
                   }}
                 />
               </LineChart>
@@ -203,11 +338,14 @@ export function TrendChart({
   );
 }
 
-function ChartTooltip({ active, label, data }: { active?: boolean; label?: string; data: AppData }) {
-  if (!active || !label) return null;
-  const day = data.days[label];
-  if (!day || day.weight === undefined) return null;
-  const items = CATEGORIES.map((c) => ({ ...c, list: day.logs[c.key] ?? [] })).filter((c) => c.list.length);
+function ChartTooltip({ active, dayKey, data }: { active?: boolean; dayKey: string | null; data: AppData }) {
+  if (!active || !dayKey) return null;
+  const day = data.days[dayKey];
+  if (!day) return null;
+  const label = dayKey;
+  const injections = day.logs.injection ?? [];
+  const items = MAIN_CATEGORIES.map((c) => ({ ...c, list: day.logs[c.key] ?? [] })).filter((c) => c.list.length);
+  if (day.weight === undefined && !items.length && !injections.length && !day.note) return null;
   return (
     <div className="w-64 border-2 border-ink bg-paper shadow-[5px_5px_0_0_#000]">
       <div className="flex items-center justify-between border-b-2 border-ink bg-ink px-3 py-1.5 font-mono text-[11px] font-bold text-paper">
@@ -217,9 +355,23 @@ function ChartTooltip({ active, label, data }: { active?: boolean; label?: strin
         <span className="text-acid">CLICK → OPEN</span>
       </div>
       <div className="flex items-end gap-1 px-3 pt-2">
-        <span className="display-tight text-5xl">{day.weight.toFixed(1)}</span>
+        <span className={`display-tight text-5xl ${day.weight === undefined ? "opacity-25" : ""}`}>
+          {day.weight !== undefined ? day.weight.toFixed(1) : "—"}
+        </span>
         <span className="display-tight pb-1 text-lg">KG</span>
       </div>
+      {injections.length > 0 && (
+        <div className="mx-3 mt-2 flex items-start gap-1.5 border-2 border-ink bg-blaze px-2 py-1 font-mono text-[11px] font-bold leading-snug">
+          <Syringe size={13} strokeWidth={2.5} className="mt-px shrink-0" />
+          <span className="break-words break-keep">{injections.map((l) => l.text).join(" / ")}</span>
+        </div>
+      )}
+      {day.note && (
+        <p className="mx-3 mt-2 border-l-4 border-acid bg-ink/5 px-2 py-1 font-mono text-[11px] leading-snug break-words break-keep">
+          <span className="font-bold">NOTE </span>
+          {day.note}
+        </p>
+      )}
       <ul className="space-y-1 px-3 pt-2 pb-3 font-mono text-[11px] leading-snug">
         {items.length === 0 && <li className="opacity-50">— 식단 기록 없음</li>}
         {items.map((c) => (
