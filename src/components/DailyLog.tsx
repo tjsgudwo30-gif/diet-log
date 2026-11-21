@@ -19,7 +19,7 @@ import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 
 import { appendNoteToken, lastInjection, NOTE_SEP, noteTokens, type DietStore } from "@/lib/store";
 import { shortLabel, todayKey, weekday } from "@/lib/date";
 import { MAIN_CATEGORIES, NOTE_MAX, NOTE_PRESETS, type Category } from "@/lib/types";
-import { BrutalButton, Cell } from "./ui";
+import { Chip, Dot, Label } from "./ui";
 
 export const CATEGORY_ICONS: Record<Category, ComponentType<{ size?: number; strokeWidth?: number }>> = {
   breakfast: Sun,
@@ -31,82 +31,104 @@ export const CATEGORY_ICONS: Record<Category, ComponentType<{ size?: number; str
 };
 
 const PLACEHOLDER: Partial<Record<Category, string>> = {
-  exercise: "운동 메모…",
-  injection: "약품·용량·부위 (예: 위고비 0.5mg 복부)",
+  exercise: "운동 메모",
+  injection: "약품 · 용량 · 부위",
 };
+
+/* ---------- Section header + layout ---------- */
 
 export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; selected: string; pulse?: number }) {
   const day = store.data.days[selected];
   const count = (keys: Category[]) => keys.reduce((n, k) => n + (day?.logs[k]?.length ?? 0), 0);
-  const meals = count(["breakfast", "lunch", "dinner", "snack"]);
-  const workouts = count(["exercise"]);
-  const shots = count(["injection"]);
-  const hasNote = !!day?.note;
   const isToday = selected === todayKey();
-  const summary: { label: string; value: string; on: boolean; tone?: "blaze" }[] = [
-    { label: "식단", value: `${meals}`, on: meals > 0 },
-    { label: "운동", value: `${workouts}`, on: workouts > 0 },
-    { label: "주사", value: shots ? `${shots}` : "—", on: shots > 0, tone: "blaze" },
-    { label: "메모", value: hasNote ? "✓" : "—", on: hasNote },
+  const summary: { label: string; value: number | boolean }[] = [
+    { label: "식단", value: count(["breakfast", "lunch", "dinner", "snack"]) },
+    { label: "운동", value: count(["exercise"]) },
+    { label: "주사", value: count(["injection"]) },
+    { label: "메모", value: !!day?.note },
   ];
+
   return (
     <>
       <div id="daily-log" className="relative col-span-6 scroll-mt-3 overflow-hidden md:col-span-12">
-        {/* flash when arriving from the chart */}
-        <motion.div
+        {/* thin sweep when arriving from the chart */}
+        <motion.span
           key={pulse}
           aria-hidden
           initial={{ x: pulse ? "-100%" : "100%" }}
           animate={{ x: "100%" }}
-          transition={{ duration: 0.7, ease: [0.7, 0, 0.3, 1] }}
-          className="pointer-events-none absolute inset-0 bg-acid"
+          transition={{ duration: 0.8, ease: [0.7, 0, 0.3, 1] }}
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-acid"
         />
-        <div className="relative flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-3 py-3 md:px-4">
-          <div className="flex items-baseline gap-3">
-            <span className="border-[1.5px] border-ink px-1.5 py-px font-mono text-[11px] font-bold">05</span>
-            <h2 className="display-tight text-[clamp(2.5rem,6vw,5rem)]">DAILY LOG</h2>
-            <AnimatePresence mode="popLayout" initial={false}>
-              <motion.span
-                key={selected}
-                initial={{ y: 16, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -16, opacity: 0 }}
-                className={`display-tight border-2 border-ink px-2 py-1 text-[clamp(1.5rem,3vw,2.5rem)] ${isToday ? "bg-acid" : "bg-ink text-paper"}`}
-              >
-                {shortLabel(selected)} {weekday(selected)}
-              </motion.span>
-            </AnimatePresence>
-          </div>
-          <div className="flex flex-col gap-1.5 pb-1 font-mono text-[11px] md:items-end">
-            <ul className="flex flex-wrap gap-1" aria-label="오늘 기록 요약">
-              {summary.map((s) => (
-                <li
-                  key={s.label}
-                  className={`flex items-center gap-1 border-2 border-ink px-1.5 py-0.5 font-bold ${
-                    s.on ? (s.tone === "blaze" ? "bg-blaze" : "bg-ink text-acid") : "bg-paper opacity-60"
-                  }`}
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 px-5 pt-4 pb-4 md:px-6 md:pt-5">
+          <div>
+            <Label className="flex items-center gap-2">
+              <span className="text-ink">05</span>
+              <span aria-hidden className="h-px w-4 bg-ink/30" />
+              <span>Daily log</span>
+            </Label>
+            <h2 className="mt-2 flex flex-wrap items-baseline gap-x-3">
+              <span className="display-tight text-[clamp(2.25rem,5vw,4rem)]">Daily Log</span>
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.span
+                  key={selected}
+                  initial={{ y: 12, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -12, opacity: 0 }}
+                  className="display-tight text-[clamp(2.25rem,5vw,4rem)] text-ink/30"
                 >
-                  <span>{s.label}</span>
-                  <span className="tabular-nums">{s.value}</span>
-                </li>
-              ))}
-              {!isToday && <li className="border-2 border-ink bg-blaze px-1.5 py-0.5 font-bold">과거 기록 편집 중</li>}
+                  {shortLabel(selected)} {weekday(selected)}
+                </motion.span>
+              </AnimatePresence>
+            </h2>
+          </div>
+          <div className="flex flex-col gap-1.5 pb-1 md:items-end">
+            <ul aria-label="이 날 기록 요약" className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
+              {summary.map((s) => {
+                const on = typeof s.value === "boolean" ? s.value : s.value > 0;
+                return (
+                  <li key={s.label} className={on ? "text-ink" : "text-ink/35"}>
+                    {s.label}{" "}
+                    <b className="tabular-nums">{typeof s.value === "boolean" ? (s.value ? "✓" : "—") : s.value}</b>
+                  </li>
+                );
+              })}
             </ul>
-            <span className="tracking-[0.08em] opacity-60">항목 클릭 → 수정 · Enter 저장 · Esc 취소 · 태그 원클릭 추가</span>
+            {!isToday && (
+              <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-ink/55">
+                <Dot tone="blaze" /> 과거 기록 편집 중
+              </span>
+            )}
           </div>
         </div>
       </div>
-      <div className="col-span-6 grid grid-cols-1 gap-[2px] bg-ink sm:grid-cols-2 md:col-span-12 lg:grid-cols-5">
-        {MAIN_CATEGORIES.map((c, i) => (
-          <LogColumn key={c.key} cat={c.key} label={c.label} en={c.en} idx={i} store={store} selected={selected} />
+
+      <div className="col-span-6 grid grid-cols-1 gap-[1.5px] bg-ink sm:grid-cols-2 md:col-span-12 lg:grid-cols-5">
+        {MAIN_CATEGORIES.map((c) => (
+          <LogColumn key={c.key} cat={c.key} label={c.label} store={store} selected={selected} />
         ))}
       </div>
+
       {/* Row 2: condition note + injection log */}
-      <div className="col-span-6 grid grid-cols-1 gap-[2px] bg-ink md:col-span-12 md:grid-cols-5">
+      <div className="col-span-6 grid grid-cols-1 gap-[1.5px] bg-ink md:col-span-12 md:grid-cols-5">
         <NoteCell store={store} selected={selected} />
-        <LogColumn cat="injection" label="주사" en="INJECTION" idx={6} store={store} selected={selected} wide />
+        <LogColumn cat="injection" label="주사" store={store} selected={selected} wide />
       </div>
     </>
+  );
+}
+
+/** Column header shared by every log cell: icon + name, quiet count on the right. */
+function ColumnHeader({ icon, label, right, mark }: { icon: ReactNode; label: string; right?: ReactNode; mark?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2 md:px-5">
+      <div className="flex items-center gap-2">
+        <span className="text-ink/70">{icon}</span>
+        <span className="whitespace-nowrap text-[15px] font-bold">{label}</span>
+        {mark}
+      </div>
+      {right}
+    </div>
   );
 }
 
@@ -174,16 +196,20 @@ function NoteCell({ store, selected }: { store: DietStore; selected: string }) {
   const nearMax = len >= NOTE_MAX * 0.9;
 
   return (
-    <Cell className="bg-paper md:col-span-3">
-      <div className="flex items-center justify-between border-b-2 border-ink px-4 py-3">
-        <div className="flex items-center gap-2">
-          <NotebookPen size={18} strokeWidth={2.5} />
-          <span className="whitespace-nowrap text-lg font-black">컨디션 · 메모</span>
-        </div>
-        <span className="truncate pl-2 font-mono text-[10px] tracking-[0.14em] opacity-60">06 / CONDITION</span>
-      </div>
+    <section className="flex flex-col bg-paper md:col-span-3">
+      <ColumnHeader
+        icon={<NotebookPen size={16} strokeWidth={1.75} />}
+        label="컨디션 · 메모"
+        right={
+          (editing || note) && (
+            <span className={`font-mono text-[10.5px] tabular-nums ${nearMax ? "text-blaze" : "text-ink/40"}`}>
+              {len}/{NOTE_MAX}
+            </span>
+          )
+        }
+      />
 
-      <div className="flex flex-1 flex-col justify-center px-4 py-3">
+      <div className="flex flex-1 flex-col justify-center px-5 py-3">
         {editing ? (
           <form
             onSubmit={(e) => {
@@ -191,13 +217,13 @@ function NoteCell({ store, selected }: { store: DietStore; selected: string }) {
               finish();
             }}
           >
-            <div className="flex border-2 border-ink">
+            <div className="flex items-stretch border-b-[1.5px] border-ink">
               <input
                 autoFocus
                 value={draft}
                 maxLength={NOTE_MAX}
                 aria-label="오늘의 컨디션 메모"
-                placeholder="예: 회식 다음날, 붓기 있음, 공복 컨디션 좋음"
+                placeholder="회식 다음날, 붓기 있음, 공복 컨디션 좋음…"
                 onChange={(e) => setDraft(e.target.value)}
                 onBlur={finish}
                 onKeyDown={(e) => {
@@ -210,27 +236,19 @@ function NoteCell({ store, selected }: { store: DietStore; selected: string }) {
                     e.currentTarget.blur();
                   }
                 }}
-                className="min-w-0 flex-1 bg-acid/30 px-3 py-2.5 font-mono text-[14px] outline-none"
+                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[14px] outline-none placeholder:text-ink/30"
               />
               <button
                 type="submit"
                 aria-label="메모 저장"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => (restoreFocus.current = true)}
-                className="min-w-11 border-l-2 border-ink bg-ink px-3 text-acid"
+                className="flex w-10 items-center justify-center text-ink/70 hover:text-ink"
               >
-                <Check size={16} strokeWidth={3} />
+                <Check size={16} strokeWidth={2.25} />
               </button>
             </div>
-            <p className="mt-1 flex justify-between gap-2 font-mono text-[10px]">
-              <span className="opacity-60">Enter 저장 · Esc 취소 · 비우면 삭제</span>
-              <span
-                aria-live="polite"
-                className={`tabular-nums ${draft.length >= NOTE_MAX ? "bg-blaze px-1 font-bold" : nearMax ? "font-bold text-blaze" : "opacity-60"}`}
-              >
-                {draft.length}/{NOTE_MAX}
-              </span>
-            </p>
+            <p className="mt-1.5 font-mono text-[10.5px] text-ink/45">Enter 저장 · Esc 취소 · 비우면 삭제</p>
           </form>
         ) : note ? (
           <div className="group/note flex items-start gap-2">
@@ -239,17 +257,16 @@ function NoteCell({ store, selected }: { store: DietStore; selected: string }) {
               type="button"
               onClick={start}
               title="클릭해서 수정"
-              className="min-w-0 flex-1 py-1 text-left font-mono text-[15px] leading-snug break-words break-keep hover:bg-acid/30"
+              className="min-w-0 flex-1 py-1 text-left text-[15px] leading-relaxed break-words break-keep transition-colors hover:text-ink/70"
             >
-              <span className="mr-2 bg-ink px-1 text-[11px] font-bold text-acid">NOTE</span>
               {note}
             </button>
             <span className="flex shrink-0">
-              <IconButton label="메모 수정" onClick={start} tone="acid">
-                <Pencil size={14} strokeWidth={2.5} />
+              <IconButton label="메모 수정" onClick={start}>
+                <Pencil size={13} strokeWidth={1.75} />
               </IconButton>
-              <IconButton label="메모 삭제" onClick={() => store.setNote(selected, "")} tone="blaze">
-                <X size={15} strokeWidth={2.5} />
+              <IconButton label="메모 삭제" onClick={() => store.setNote(selected, "")} danger>
+                <X size={14} strokeWidth={1.75} />
               </IconButton>
             </span>
           </div>
@@ -258,40 +275,28 @@ function NoteCell({ store, selected }: { store: DietStore; selected: string }) {
             ref={viewRef}
             type="button"
             onClick={start}
-            className="w-full border-2 border-dashed border-ink/40 px-3 py-3 text-left font-mono text-[13px] opacity-60 hover:border-ink hover:bg-acid/30 hover:opacity-100"
+            className="w-full border border-dashed border-ink/25 px-4 py-3 text-left font-mono text-[12px] text-ink/45 transition-colors hover:border-ink hover:text-ink"
           >
-            + 오늘 컨디션 한 줄 남기기 (회식, 붓기, 공복 상태…)
+            + 오늘 컨디션 한 줄
           </button>
         )}
       </div>
 
-      <div className="border-t-2 border-ink px-3 py-3">
-        <div className="mb-2 flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.14em]">
-          <span className="opacity-70">Quick condition · 탭하면 ‘ · ’로 이어 붙음</span>
+      <div className="px-5 pt-2 pb-5">
+        <div className="mb-2 flex min-h-5 items-center justify-between gap-2">
+          <Label>Quick condition</Label>
           <AnimatePresence mode="wait">
-            {hint ? (
+            {hint && (
               <motion.span
                 key={hint.text}
                 role="status"
-                initial={{ opacity: 0, y: 4 }}
+                initial={{ opacity: 0, y: 3 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className={`shrink-0 border-2 border-ink px-1.5 font-bold normal-case tracking-normal ${hint.tone === "warn" ? "bg-blaze" : "bg-acid"}`}
+                className={`font-mono text-[10.5px] ${hint.tone === "warn" ? "text-blaze" : "text-ink/55"}`}
               >
                 {hint.text}
               </motion.span>
-            ) : (
-              !editing &&
-              note && (
-                <motion.span
-                  key="len"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className={`shrink-0 tabular-nums ${nearMax ? "font-bold text-blaze" : "opacity-50"}`}
-                >
-                  {len}/{NOTE_MAX}
-                </motion.span>
-              )
             )}
           </AnimatePresence>
         </div>
@@ -299,38 +304,30 @@ function NoteCell({ store, selected }: { store: DietStore; selected: string }) {
           {NOTE_PRESETS.map((p) => {
             const used = noteTokens(editing ? draft : note).includes(p);
             return (
-              <BrutalButton
-                key={p}
-                shadow={false}
-                aria-pressed={used}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => togglePreset(p)}
-                className={`h-9 px-2.5 text-[11px] normal-case tracking-normal md:h-7 md:px-2 ${used ? "!bg-ink !text-acid" : ""}`}
-              >
-                {used && <Check size={11} strokeWidth={3} />}
+              <Chip key={p} active={used} aria-pressed={used} onMouseDown={(e) => e.preventDefault()} onClick={() => togglePreset(p)}>
                 {p}
-              </BrutalButton>
+              </Chip>
             );
           })}
         </div>
       </div>
-    </Cell>
+    </section>
   );
 }
 
 /**
- * Square icon button: 36px touch target on mobile, compact 28px on desktop,
- * always visible on touch screens (no hover there), dimmed until hover on desktop.
+ * Square ghost icon button: 36px touch target on mobile, compact 28px on desktop,
+ * always visible on touch screens (no hover there), faint until hover on desktop.
  */
 function IconButton({
   label,
   onClick,
-  tone,
+  danger = false,
   children,
 }: {
   label: string;
   onClick: () => void;
-  tone: "acid" | "blaze";
+  danger?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -339,9 +336,9 @@ function IconButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`flex h-9 w-9 items-center justify-center opacity-70 transition md:h-7 md:w-7 md:opacity-35 md:group-hover/item:opacity-80 md:group-hover/note:opacity-80 ${
-        tone === "acid" ? "hover:bg-acid" : "hover:bg-blaze"
-      } hover:opacity-100 focus-visible:opacity-100`}
+      className={`flex h-9 w-9 items-center justify-center text-ink/45 transition md:h-7 md:w-7 md:text-ink/25 md:group-hover/item:text-ink/60 md:group-hover/note:text-ink/60 ${
+        danger ? "hover:!text-blaze" : "hover:!text-ink"
+      } focus-visible:text-ink`}
     >
       {children}
     </button>
@@ -355,14 +352,12 @@ function IconButton({
  */
 function LogEntry({
   text,
-  isEx,
   marker,
   onSave,
   onRemove,
 }: {
   text: string;
-  isEx: boolean;
-  marker?: string;
+  marker?: ReactNode;
   onSave: (t: string) => void;
   onRemove: () => void;
 }) {
@@ -390,7 +385,7 @@ function LogEntry({
   if (editing) {
     return (
       <form
-        className="flex items-stretch gap-0 py-1"
+        className="flex items-stretch border-b-[1.5px] border-ink py-0.5"
         onSubmit={(e) => {
           e.preventDefault();
           finish();
@@ -415,58 +410,56 @@ function LogEntry({
               e.currentTarget.blur();
             }
           }}
-          className="min-w-0 flex-1 border-2 border-ink bg-acid/40 px-2 py-2 font-mono text-[14px] outline-none md:py-1 md:text-[13px]"
+          className="min-w-0 flex-1 bg-transparent py-1.5 font-mono text-[14px] outline-none md:text-[13px]"
         />
         <button
           type="submit"
           aria-label="수정 저장"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => (restoreFocus.current = true)}
-          className="min-w-10 border-2 border-l-0 border-ink bg-ink px-2 text-acid"
+          className="flex w-9 items-center justify-center text-ink/70 hover:text-ink"
         >
-          <Check size={14} strokeWidth={3} className="mx-auto" />
+          <Check size={14} strokeWidth={2.25} />
         </button>
       </form>
     );
   }
 
   return (
-    <div className="flex items-start justify-between gap-1 py-1">
+    <div className="flex items-start justify-between gap-1">
       <button
         ref={viewRef}
         type="button"
         onClick={start}
         title="클릭해서 수정"
-        className="flex min-h-9 min-w-0 flex-1 items-start gap-2 py-1 text-left hover:bg-acid/30 md:min-h-0"
+        className="flex min-h-9 min-w-0 flex-1 items-start gap-2 py-2 text-left transition-colors hover:text-ink/70 md:min-h-0"
       >
-        <span className={`shrink-0 ${isEx ? "text-blaze" : "opacity-40"}`}>{marker ?? (isEx ? "▲" : "—")}</span>
+        {marker}
         <span className="min-w-0 break-words break-keep">{text}</span>
       </button>
-      <span className="flex shrink-0">
-        <IconButton label="수정" onClick={start} tone="acid">
-          <Pencil size={13} strokeWidth={2.5} />
+      <span className="flex shrink-0 pt-0.5">
+        <IconButton label="수정" onClick={start}>
+          <Pencil size={13} strokeWidth={1.75} />
         </IconButton>
-        <IconButton label="삭제" onClick={onRemove} tone="blaze">
-          <X size={14} strokeWidth={2.5} />
+        <IconButton label="삭제" onClick={onRemove} danger>
+          <X size={14} strokeWidth={1.75} />
         </IconButton>
       </span>
     </div>
   );
 }
 
+/* ---------- Meal / exercise / injection column ---------- */
+
 function LogColumn({
   cat,
   label,
-  en,
-  idx,
   store,
   selected,
   wide = false,
 }: {
   cat: Category;
   label: string;
-  en: string;
-  idx: number;
   store: DietStore;
   selected: string;
   /** Used for the injection cell in the second Daily Log row. */
@@ -479,7 +472,6 @@ function LogColumn({
   const [tagMode, setTagMode] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const Icon = CATEGORY_ICONS[cat];
-  const isEx = cat === "exercise";
   const isInj = cat === "injection";
   const last = isInj ? lastInjection(data, selected, { strict: true }) : null;
   // "due" colouring only makes sense for today; on past days D+N is just informational
@@ -491,80 +483,67 @@ function LogColumn({
     setText("");
   };
 
-  const headerTone = isEx ? "bg-ink text-paper" : isInj ? "bg-blaze text-ink" : "";
   return (
-    <Cell className={`bg-paper ${wide ? "md:col-span-2" : "md:min-h-[360px]"} ${isEx ? "sm:col-span-2 lg:col-span-1" : ""}`}>
-      <div className={`flex items-center justify-between border-b-2 border-ink px-4 py-3 ${headerTone}`}>
-        <div className="flex items-center gap-2">
-          <Icon size={18} strokeWidth={2.5} />
-          <span className="whitespace-nowrap text-lg font-black">{label}</span>
-          {isInj && items.length > 0 && (
-            <span className="border-2 border-ink bg-paper px-1.5 font-mono text-[10px] font-bold">✓ 투약함</span>
-          )}
-        </div>
-        <span className={`truncate pl-2 font-mono text-[10px] tracking-[0.14em] ${isEx ? "text-acid" : isInj ? "font-bold" : "opacity-60"}`}>
-          {String(idx + 1).padStart(2, "0")} / {en}
-        </span>
-      </div>
+    <section className={`flex flex-col bg-paper ${wide ? "md:col-span-2" : "md:min-h-[340px]"} ${cat === "exercise" ? "sm:col-span-2 lg:col-span-1" : ""}`}>
+      <ColumnHeader
+        icon={<Icon size={16} strokeWidth={1.75} />}
+        label={label}
+        mark={isInj && items.length > 0 ? <span className="font-mono text-[10.5px] text-ink/55">· 투약함</span> : null}
+        right={<span className="font-mono text-[11px] tabular-nums text-ink/35">{items.length || ""}</span>}
+      />
 
       {isInj && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-ink px-4 py-2 font-mono text-[11px]">
+        <div className="mx-5 mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-ink/10 pb-3 font-mono text-[11px]">
           {last ? (
             <>
-              <span className="min-w-0 truncate">
-                <span className="opacity-60">LAST</span> {shortLabel(last.key)} · {last.text}
+              <span className="min-w-0 truncate text-ink/55">
+                지난 투약 {shortLabel(last.key)} · {last.text}
               </span>
-              <span className="flex items-center gap-1.5">
-                <span className={`border-2 border-ink px-1.5 font-bold ${injectionDue ? "bg-blaze" : "bg-acid"}`}>
-                  D+{last.daysAgo}
+              <span className="flex items-center gap-2">
+                <span className={`flex items-center gap-1.5 font-bold ${injectionDue ? "text-blaze" : ""}`}>
+                  {injectionDue && <Dot tone="blaze" />}D+{last.daysAgo}
                 </span>
                 {!items.length && (
-                  <button
-                    type="button"
-                    onClick={() => addLog(selected, cat, last.text)}
-                    className="border-2 border-ink px-1.5 font-bold hover:bg-ink hover:text-acid"
-                    title="지난번과 같은 약품·용량으로 기록"
-                  >
+                  <Chip onClick={() => addLog(selected, cat, last.text)} title="지난번과 같은 약품·용량으로 기록">
                     ↺ 지난번과 동일
-                  </button>
+                  </Chip>
                 )}
               </span>
             </>
           ) : (
-            <span className="opacity-60">이전 투약 기록 없음 · 태그로 약품/용량/부위를 한 번에 기록하세요</span>
+            <span className="text-ink/45">이전 투약 기록 없음 · 아래 태그로 약품/용량/부위를 기록하세요</span>
           )}
         </div>
       )}
 
       {/* Entries */}
-      <ul className="flex-1 space-y-0 px-4 py-2">
+      <ul className="flex-1 px-5 font-mono text-[13px] leading-snug">
         <AnimatePresence initial={false}>
           {items.map((it) => (
             <motion.li
               key={it.id}
               layout
-              initial={{ opacity: 0, x: -12, backgroundColor: "#CCFF00" }}
-              animate={{ opacity: 1, x: 0, backgroundColor: "rgba(204,255,0,0)" }}
-              exit={{ opacity: 0, x: 12, height: 0 }}
-              transition={{ duration: 0.25, backgroundColor: { duration: 0.9 } }}
-              className="group/item border-b border-dashed border-ink/40 font-mono text-[13px] leading-snug"
+              initial={{ opacity: 0, y: -4, backgroundColor: "rgba(204,255,0,0.55)" }}
+              animate={{ opacity: 1, y: 0, backgroundColor: "rgba(204,255,0,0)" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, backgroundColor: { duration: 1 } }}
+              className="group/item border-b border-ink/10"
             >
               <LogEntry
                 text={it.text}
-                isEx={isEx || isInj}
-                marker={isInj ? "◆" : undefined}
+                marker={isInj ? <Dot tone="blaze" className="mt-[5px]" /> : undefined}
                 onSave={(t) => updateLog(selected, cat, it.id, t)}
                 onRemove={() => removeLog(selected, cat, it.id)}
               />
             </motion.li>
           ))}
         </AnimatePresence>
-        {items.length === 0 && <li className="py-2 font-mono text-[12px] opacity-35">— empty</li>}
+        {items.length === 0 && <li className="py-2 text-[12px] text-ink/30">—</li>}
       </ul>
 
       {/* Input */}
       <form
-        className="flex border-t-2 border-ink"
+        className="mx-5 mt-2 flex items-stretch border-b border-ink/20 transition-colors focus-within:border-ink"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
@@ -574,24 +553,30 @@ function LogColumn({
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={PLACEHOLDER[cat] ?? "무엇을 먹었나요?"}
-          className="min-w-0 flex-1 bg-transparent px-3 py-2.5 font-mono text-[13px] outline-none placeholder:text-ink/35 focus:bg-acid/40"
+          aria-label={`${label} 추가`}
+          className="min-w-0 flex-1 bg-transparent py-2.5 font-mono text-[13px] outline-none placeholder:text-ink/30"
         />
         <motion.button
           type="submit"
           aria-label="저장"
           whileTap={{ scale: 0.85 }}
-          className="border-l-2 border-ink px-3 transition-colors hover:bg-ink hover:text-acid"
+          disabled={!text.trim()}
+          className="flex w-9 items-center justify-center text-ink transition-opacity disabled:opacity-25"
         >
-          <CornerDownLeft size={16} strokeWidth={2.5} />
+          <CornerDownLeft size={15} strokeWidth={1.75} />
         </motion.button>
       </form>
 
       {/* Quick tags */}
-      <div className="border-t-2 border-ink px-3 py-3">
-        <div className="mb-2 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] opacity-70">
-          <span>{isInj ? "Quick tags · 탭하면 한 기록에 합쳐짐" : "Quick tags"}</span>
-          <button type="button" onClick={() => setTagMode((v) => !v)} className={`px-2 py-1.5 md:px-1 md:py-0 ${tagMode ? "bg-ink text-acid" : "hover:bg-acid"}`}>
-            {tagMode ? "done" : "edit"}
+      <div className="px-5 pt-3 pb-5">
+        <div className="mb-2 flex items-center justify-between">
+          <Label>{isInj ? "태그 · 한 기록에 합쳐짐" : "Quick tags"}</Label>
+          <button
+            type="button"
+            onClick={() => setTagMode((v) => !v)}
+            className="-my-1 px-1.5 py-1 font-mono text-[10.5px] text-ink/45 underline-offset-4 hover:text-ink hover:underline"
+          >
+            {tagMode ? "완료" : "편집"}
           </button>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -600,20 +585,15 @@ function LogColumn({
               <motion.div
                 key={t}
                 layout
-                initial={{ scale: 0.6, opacity: 0 }}
+                initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.6, opacity: 0 }}
+                exit={{ scale: 0.8, opacity: 0 }}
                 className="flex"
               >
-                <BrutalButton
-                  shadow={false}
-                  tone={isEx ? "ink" : "paper"}
-                  onClick={() => (tagMode ? removeTag(cat, t) : addTagEntry(selected, cat, t))}
-                  className={`h-9 px-2.5 text-[11px] normal-case tracking-normal md:h-7 md:px-2 ${isEx ? "hover:!text-ink" : ""} ${tagMode ? "!bg-blaze !text-ink" : ""}`}
-                >
-                  {tagMode && <X size={11} strokeWidth={3} />}
+                <Chip danger={tagMode} onClick={() => (tagMode ? removeTag(cat, t) : addTagEntry(selected, cat, t))}>
+                  {tagMode && <X size={11} strokeWidth={2} />}
                   {t}
-                </BrutalButton>
+                </Chip>
               </motion.div>
             ))}
           </AnimatePresence>
@@ -624,7 +604,7 @@ function LogColumn({
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="mt-2 flex overflow-hidden border-2 border-ink"
+              className="mt-2 flex overflow-hidden border-b border-ink"
               onSubmit={(e) => {
                 e.preventDefault();
                 addTag(cat, tagDraft);
@@ -636,15 +616,16 @@ function LogColumn({
                 value={tagDraft}
                 onChange={(e) => setTagDraft(e.target.value)}
                 placeholder="#새태그"
-                className="min-w-0 flex-1 bg-transparent px-2 py-1.5 font-mono text-[12px] outline-none"
+                aria-label="새 태그"
+                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[12px] outline-none placeholder:text-ink/30"
               />
-              <button type="submit" aria-label="태그 추가" className="border-l-2 border-ink bg-acid px-2">
-                <Plus size={14} strokeWidth={3} />
+              <button type="submit" aria-label="태그 추가" className="flex w-9 items-center justify-center hover:text-ink">
+                <Plus size={14} strokeWidth={2} />
               </button>
             </motion.form>
           )}
         </AnimatePresence>
       </div>
-    </Cell>
+    </section>
   );
 }

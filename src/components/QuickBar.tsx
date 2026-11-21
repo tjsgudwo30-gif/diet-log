@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronDown, ChevronUp, Minus, Plus, Send, Syringe } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Minus, Plus, Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { shortLabel, todayKey, weekdayKo } from "@/lib/date";
 import {
@@ -15,6 +15,7 @@ import {
   type DietStore,
 } from "@/lib/store";
 import { CATEGORIES, NOTE_MAX, NOTE_PRESETS, type Category } from "@/lib/types";
+import { Chip, Dot } from "./ui";
 
 const SAVED_FEEDBACK_MS = 1200;
 /** Weekly GLP-1 style schedule: an injection is "due" 7+ days after the last one. */
@@ -26,8 +27,8 @@ const MODES: { key: Mode; label: string }[] = [...CATEGORIES.map((c) => ({ key: 
 
 const PLACEHOLDER: Partial<Record<Mode, string>> = {
   exercise: "운동 메모…",
-  injection: "약품·용량·부위 (위고비 0.5mg 복부)",
-  note: "오늘 컨디션 한 줄 (회식, 붓기…)",
+  injection: "약품 · 용량 · 부위",
+  note: "오늘 컨디션 한 줄",
 };
 
 /** Pick the meal slot that fits the current time of day. */
@@ -175,8 +176,11 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
   const chips = cat === "note" ? NOTE_PRESETS : data.tags[cat];
 
   return (
-    <div ref={rootRef} className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-ink bg-paper pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_0_0_rgba(0,0,0,0.08)] md:hidden">
-      {/* Row 0: injection-day reminder */}
+    <div
+      ref={rootRef}
+      className="fixed inset-x-0 bottom-0 z-40 border-t-[1.5px] border-ink bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm md:hidden"
+    >
+      {/* Injection-day reminder (today only) */}
       <AnimatePresence initial={false}>
         {injectionDue && lastInj && (
           <motion.button
@@ -188,41 +192,38 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
               setCat("injection");
               setExpanded(true);
             }}
-            className="flex w-full items-center justify-between gap-2 overflow-hidden border-b-2 border-ink bg-blaze px-3 font-mono text-[11px] font-bold"
+            className="flex w-full items-center justify-between gap-2 overflow-hidden border-b border-ink/15 px-4 font-mono text-[11px]"
           >
-            <span className="flex min-w-0 items-center gap-1.5">
-              <Syringe size={13} strokeWidth={2.5} className="shrink-0" />
+            <span className="flex min-w-0 items-center gap-2">
+              <Dot tone="blaze" />
               <span className="truncate">
                 주사 예정일 · 지난 투약 {shortLabel(lastInj.key)} (D+{lastInj.daysAgo})
               </span>
             </span>
-            <span className="shrink-0 bg-ink px-1.5 text-acid">기록 →</span>
+            <span className="shrink-0 font-bold underline underline-offset-4">기록</span>
           </motion.button>
         )}
       </AnimatePresence>
-      {/* Row 1: date chip + weight controls */}
-      <div className="flex h-14 items-stretch border-b-2 border-ink">
+
+      {/* Row 1: date / weight stepper */}
+      <div className="flex h-12 items-stretch">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-label={expanded ? "퀵 입력 접기" : "퀵 입력 펼치기"}
-          className={`flex w-14 shrink-0 flex-col items-center justify-center border-r-2 border-ink font-mono text-[10px] font-bold leading-tight ${isToday ? "bg-acid" : "bg-ink text-paper"}`}
+          aria-expanded={expanded}
+          className="flex w-[4.25rem] shrink-0 items-center justify-center gap-1 border-r border-ink/15 font-mono text-[11px] font-bold"
         >
-          {shortLabel(selected)}
-          <span className="flex items-center gap-0.5">
-            {weekdayKo(selected)}
-            {expanded ? <ChevronDown size={11} strokeWidth={3} /> : <ChevronUp size={11} strokeWidth={3} />}
+          {isToday && <Dot tone="acid" />}
+          <span className="leading-tight">
+            {shortLabel(selected)}
+            <span className="block text-[10px] font-normal text-ink/50">{weekdayKo(selected)}</span>
           </span>
+          {expanded ? <ChevronDown size={12} strokeWidth={2} /> : <ChevronUp size={12} strokeWidth={2} />}
         </button>
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.88, backgroundColor: "#CCFF00" }}
-          onClick={() => nudge(-0.1)}
-          aria-label="0.1kg 감소"
-          className="flex w-14 shrink-0 items-center justify-center border-r-2 border-ink"
-        >
-          <Minus size={22} strokeWidth={3} />
-        </motion.button>
+        <StepButton label="0.1kg 감소" onClick={() => nudge(-0.1)}>
+          <Minus size={18} strokeWidth={2} />
+        </StepButton>
         <form
           className="flex min-w-0 flex-1 items-center justify-center gap-1"
           onSubmit={(e) => {
@@ -244,19 +245,13 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
             }}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commitWeight}
-            className="display-tight w-full min-w-0 bg-transparent text-center text-[2.6rem] outline-none placeholder:text-ink/25 focus:bg-acid"
+            className="display-tight w-full min-w-0 bg-transparent text-center text-[2.1rem] outline-none placeholder:text-ink/20 focus:underline focus:decoration-2 focus:underline-offset-4"
           />
-          <span className="display-tight shrink-0 pr-1 text-lg">KG</span>
+          <span className="shrink-0 pr-1 font-mono text-[11px] text-ink/50">kg</span>
         </form>
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.88, backgroundColor: "#CCFF00" }}
-          onClick={() => nudge(0.1)}
-          aria-label="0.1kg 증가"
-          className="flex w-14 shrink-0 items-center justify-center border-l-2 border-ink"
-        >
-          <Plus size={22} strokeWidth={3} />
-        </motion.button>
+        <StepButton label="0.1kg 증가" onClick={() => nudge(0.1)} right>
+          <Plus size={18} strokeWidth={2} />
+        </StepButton>
       </div>
 
       <AnimatePresence initial={false}>
@@ -265,91 +260,75 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
             initial={{ height: 0 }}
             animate={{ height: "auto" }}
             exit={{ height: 0 }}
-            transition={{ type: "spring", stiffness: 500, damping: 40 }}
-            className="overflow-hidden"
+            transition={{ type: "spring", stiffness: 500, damping: 42 }}
+            className="overflow-hidden border-t border-ink/15"
           >
-            {/* Row 2: category segmented control */}
-            <div className="grid grid-cols-7 border-b-2 border-ink">
-              {MODES.map((c, i) => {
+            {/* Mode tabs: text + underline, dot = already recorded */}
+            <div role="tablist" aria-label="입력 종류" className="grid grid-cols-7 px-1">
+              {MODES.map((c) => {
                 const on = cat === c.key;
-                const isInj = c.key === "injection";
-                const done =
-                  c.key === "note" ? !!note : c.key === "injection" ? injectedToday : false;
+                const done = c.key === "note" ? !!note : c.key === "injection" ? injectedToday : false;
                 return (
                   <button
                     key={c.key}
                     type="button"
+                    role="tab"
+                    aria-selected={on}
                     onClick={() => {
                       setCat(c.key);
                       inputRef.current?.focus({ preventScroll: true });
                     }}
-                    className={`relative h-10 text-[13px] font-black ${i ? "border-l-2 border-ink" : ""} ${isInj && !on ? "text-blaze" : ""}`}
+                    className={`relative h-10 text-[12.5px] font-bold transition-colors ${on ? "text-ink" : "text-ink/40"}`}
                   >
+                    {c.label}
+                    {done && <span aria-hidden className="absolute top-2 right-1.5 h-1 w-1 bg-ink" />}
                     {on && (
                       <motion.span
-                        layoutId="qb-cat"
-                        className={`absolute inset-0 ${isInj ? "bg-blaze" : "bg-ink"}`}
+                        layoutId="qb-tab"
+                        className={`absolute inset-x-2 bottom-1 h-[2px] ${c.key === "injection" ? "bg-blaze" : "bg-ink"}`}
                         transition={{ type: "spring", stiffness: 600, damping: 40 }}
                       />
-                    )}
-                    <span className={`relative ${on && !isInj ? "text-acid" : ""}`}>{c.label}</span>
-                    {done && (
-                      <span aria-hidden className="absolute top-0.5 right-0.5 h-1.5 w-1.5 border border-ink bg-acid" />
                     )}
                   </button>
                 );
               })}
             </div>
 
-            {/* Row 3: one-tap chips (horizontal scroll) */}
-            <div className="no-scrollbar flex gap-1.5 overflow-x-auto border-b-2 border-ink px-2 py-2">
+            {/* One-tap chips */}
+            <div className="no-scrollbar flex gap-1.5 overflow-x-auto px-3 pb-2.5">
               {cat === "injection" && lastInj && !injectedToday && (
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => submit(lastInj.text)}
-                  className="h-9 shrink-0 border-2 border-ink bg-blaze px-2.5 font-mono text-xs font-bold"
-                  title={lastInj.text}
-                >
+                <Chip onClick={() => submit(lastInj.text)} title={lastInj.text} className="border-ink">
                   ↺ 지난번과 동일
-                </motion.button>
+                </Chip>
               )}
               {chips.map((t) => {
                 const used = cat === "note" && noteParts.includes(t);
                 return (
-                  <motion.button
-                    key={t}
-                    type="button"
-                    aria-pressed={cat === "note" ? used : undefined}
-                    whileTap={{ scale: 0.9, backgroundColor: "#CCFF00" }}
-                    onClick={() => tapTag(t)}
-                    className={`h-9 shrink-0 border-2 border-ink px-2.5 font-mono text-xs font-bold ${used ? "bg-ink text-acid" : ""}`}
-                  >
-                    {used && "✓ "}
+                  <Chip key={t} active={used} aria-pressed={cat === "note" ? used : undefined} onClick={() => tapTag(t)}>
                     {t}
-                  </motion.button>
+                  </Chip>
                 );
               })}
             </div>
+
             <AnimatePresence initial={false}>
               {hint && (
                 <motion.p
                   key={hint.text}
                   role="status"
-                  initial={{ height: 0 }}
-                  animate={{ height: "auto" }}
-                  exit={{ height: 0 }}
-                  className={`overflow-hidden border-b-2 border-ink px-3 font-mono text-[11px] font-bold ${hint.warn ? "bg-blaze" : "bg-acid"}`}
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className={`overflow-hidden px-4 font-mono text-[11px] ${hint.warn ? "text-blaze" : "text-ink/55"}`}
                 >
-                  <span className="block py-1.5">{hint.text}</span>
+                  <span className="block pb-2">{hint.text}</span>
                 </motion.p>
               )}
             </AnimatePresence>
             {cat === "note" && note && (
-              <p className="flex items-center gap-2 border-b-2 border-ink px-3 py-1.5 font-mono text-[11px]">
-                <span className="shrink-0 bg-ink px-1 font-bold text-acid">NOTE</span>
+              <p className="flex items-center gap-2 px-4 pb-2 font-mono text-[11px] text-ink/60">
                 <span className="min-w-0 flex-1 truncate">{note}</span>
-                <span className={`shrink-0 tabular-nums ${note.length >= NOTE_MAX * 0.9 ? "font-bold text-blaze" : "opacity-50"}`}>
+                <span className={`shrink-0 tabular-nums ${note.length >= NOTE_MAX * 0.9 ? "text-blaze" : "text-ink/40"}`}>
                   {note.length}/{NOTE_MAX}
                 </span>
               </p>
@@ -358,23 +337,18 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
         )}
       </AnimatePresence>
 
-      {/* Row 4: memo input */}
+      {/* Memo input */}
       {expanded && (
         <form
-          className="flex h-12 items-stretch"
+          className="flex h-11 items-stretch border-t border-ink/15"
           onSubmit={(e) => {
             e.preventDefault();
             submit();
           }}
         >
-          <span className="flex w-14 shrink-0 items-center justify-center border-r-2 border-ink font-mono text-[11px] font-bold">
+          <span className="flex w-12 shrink-0 items-center justify-center font-mono text-[11px] text-ink/45">
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.span
-                key={`${cat}-${count}`}
-                initial={{ y: 12, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -12, opacity: 0 }}
-              >
+              <motion.span key={`${cat}-${count}`} initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -10, opacity: 0 }}>
                 {cat === "note" ? (count ? "✓" : "—") : count > 0 ? `${count}건` : "—"}
               </motion.span>
             </AnimatePresence>
@@ -385,31 +359,57 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
             onChange={(e) => setText(e.target.value)}
             enterKeyHint="send"
             maxLength={cat === "note" ? NOTE_MAX : 500}
-            placeholder={PLACEHOLDER[cat] ?? `${MODES.find((c) => c.key === cat)?.label ?? ""} 메모 입력…`}
-            className="min-w-0 flex-1 bg-transparent px-3 font-mono text-[15px] outline-none placeholder:text-ink/35 focus:bg-acid/30"
+            aria-label={`${MODES.find((c) => c.key === cat)?.label ?? ""} 입력`}
+            placeholder={PLACEHOLDER[cat] ?? `${MODES.find((c) => c.key === cat)?.label ?? ""} 기록`}
+            className="min-w-0 flex-1 bg-transparent px-1 font-mono text-[15px] outline-none placeholder:text-ink/30"
           />
           <motion.button
             type="submit"
             aria-label={justSaved ? "저장됨" : "저장"}
-            whileTap={{ scale: 0.85 }}
-            animate={{ backgroundColor: justSaved ? "#CCFF00" : "#000000", color: justSaved ? "#000000" : "#CCFF00" }}
+            whileTap={{ scale: 0.88 }}
+            initial={false}
+            animate={{ backgroundColor: justSaved ? "#CCFF00" : "#000000", color: justSaved ? "#000000" : "#F4F4F0" }}
             transition={{ duration: 0.15 }}
-            className="flex w-14 shrink-0 items-center justify-center border-l-2 border-ink"
+            className="flex w-12 shrink-0 items-center justify-center"
           >
             <AnimatePresence mode="popLayout" initial={false}>
               <motion.span
                 key={justSaved ? "saved" : "send"}
-                initial={{ scale: 0.4, rotate: -30, opacity: 0 }}
-                animate={{ scale: 1, rotate: 0, opacity: 1 }}
-                exit={{ scale: 0.4, opacity: 0 }}
-                transition={{ type: "spring", stiffness: 600, damping: 18 }}
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.5, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 600, damping: 20 }}
               >
-                {justSaved ? <Check size={22} strokeWidth={3.5} /> : <Send size={18} strokeWidth={2.5} />}
+                {justSaved ? <Check size={20} strokeWidth={2.5} /> : <Send size={16} strokeWidth={2} />}
               </motion.span>
             </AnimatePresence>
           </motion.button>
         </form>
       )}
     </div>
+  );
+}
+
+function StepButton({
+  label,
+  onClick,
+  right = false,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  right?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <motion.button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      whileTap={{ scale: 0.88 }}
+      className={`flex w-12 shrink-0 items-center justify-center border-ink/15 active:bg-ink active:text-paper ${right ? "border-l" : "border-r"}`}
+    >
+      {children}
+    </motion.button>
   );
 }

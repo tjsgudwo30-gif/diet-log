@@ -20,7 +20,7 @@ export function AnimatedNumber({
   const fmt = (v: number) => {
     const s = Math.abs(v).toFixed(decimals);
     if (!signed) return (v < 0 ? "-" : "") + s;
-    return (v > 0.00001 ? "+" : v < -0.00001 ? "-" : "±") + s;
+    return (v > 0.00001 ? "+" : v < -0.00001 ? "−" : "±") + s;
   };
 
   useEffect(() => {
@@ -38,39 +38,75 @@ export function AnimatedNumber({
   );
 }
 
-/* ---------- Brutalist button with heavy press feedback ---------- */
+/* ---------- Button: flat, hairline, firm press ---------- */
 type Tone = "paper" | "ink" | "acid" | "blaze";
 const toneCls: Record<Tone, string> = {
-  paper: "bg-paper text-ink",
-  ink: "bg-ink text-paper",
-  acid: "bg-acid text-ink",
-  blaze: "bg-blaze text-ink",
+  paper: "bg-paper text-ink border-ink hover:bg-ink hover:text-paper",
+  ink: "bg-ink text-paper border-ink hover:bg-ink/85",
+  acid: "bg-acid text-ink border-ink hover:bg-ink hover:text-paper",
+  blaze: "bg-blaze text-ink border-ink hover:bg-ink hover:text-paper",
 };
 
+/**
+ * Kept as `BrutalButton` for API compatibility, now a calm flat button:
+ * 1.5px border, no drop shadow, colour inversion on hover and a short, weighty press.
+ * (`shadow` is accepted and ignored.)
+ */
 export function BrutalButton({
   tone = "paper",
   className = "",
   children,
-  shadow = true,
+  shadow: _shadow,
   ...rest
 }: { tone?: Tone; shadow?: boolean; children: ReactNode } & HTMLMotionProps<"button">) {
+  void _shadow;
   return (
     <motion.button
       type="button"
       {...rest}
-      initial={false}
-      whileHover={shadow ? { x: -2, y: -2, boxShadow: "4px 4px 0 0 #000" } : { backgroundColor: "#CCFF00" }}
-      whileTap={shadow ? { x: 2, y: 2, boxShadow: "0px 0px 0 0 #000", scale: 0.97 } : { scale: 0.92 }}
-      transition={{ type: "spring", stiffness: 700, damping: 28, mass: 1.2 }}
-      style={{ boxShadow: shadow ? "2px 2px 0 0 #000" : undefined }}
-      className={`inline-flex select-none items-center justify-center gap-1.5 border-2 border-ink font-mono text-xs font-bold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40 ${toneCls[tone]} ${className}`}
+      whileTap={{ scale: 0.96, y: 1 }}
+      transition={{ type: "spring", stiffness: 700, damping: 30, mass: 1.1 }}
+      className={`inline-flex select-none items-center justify-center gap-1.5 border-[1.5px] font-mono text-[11px] font-bold uppercase tracking-[0.08em] transition-colors disabled:pointer-events-none disabled:opacity-35 ${toneCls[tone]} ${className}`}
     >
       {children}
     </motion.button>
   );
 }
 
-/* ---------- Bento cell with index label + hover reaction ---------- */
+/* ---------- Chip: the one tag/preset style used everywhere ---------- */
+export function Chip({
+  active = false,
+  danger = false,
+  className = "",
+  children,
+  ...rest
+}: { active?: boolean; danger?: boolean; children: ReactNode } & HTMLMotionProps<"button">) {
+  const state = danger
+    ? "border-blaze text-blaze hover:bg-blaze hover:text-ink"
+    : active
+      ? "border-ink bg-ink text-paper"
+      : "border-ink/25 text-ink hover:border-ink";
+  return (
+    <motion.button
+      type="button"
+      {...rest}
+      whileTap={{ scale: 0.95 }}
+      transition={{ type: "spring", stiffness: 700, damping: 30 }}
+      className={`inline-flex h-9 shrink-0 select-none items-center gap-1 border px-2.5 font-mono text-[11px] transition-colors md:h-7 md:px-2 ${state} ${className}`}
+    >
+      {children}
+    </motion.button>
+  );
+}
+
+/* ---------- Small caps label ---------- */
+export function Label({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <span className={`font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink/55 ${className}`}>{children}</span>
+  );
+}
+
+/* ---------- Bento cell: quiet index + label header ---------- */
 export function Cell({
   index,
   label,
@@ -85,46 +121,24 @@ export function Cell({
   right?: ReactNode;
 }) {
   return (
-    <motion.section
-      initial="rest"
-      animate="rest"
-      whileHover="hover"
-      className={`group relative flex flex-col ${className}`}
-    >
+    <section className={`relative flex flex-col ${className}`}>
       {(index || label || right) && (
-        <header className="flex items-center justify-between gap-3 px-4 pt-3 font-mono text-[11px] uppercase tracking-[0.14em]">
-          <div className="flex items-center gap-2">
-            {index && (
-              <motion.span
-                variants={{ rest: { backgroundColor: "#F4F4F0" }, hover: { backgroundColor: "#CCFF00" } }}
-                transition={{ duration: 0.15 }}
-                className="border-[1.5px] border-ink px-1.5 py-px font-bold"
-              >
-                {index}
-              </motion.span>
-            )}
+        <header className="flex min-h-6 items-center justify-between gap-3 px-5 pt-4 md:px-6 md:pt-5">
+          <Label className="flex items-center gap-2">
+            {index && <span className="text-ink">{index}</span>}
+            {index && label && <span aria-hidden className="h-px w-4 bg-ink/30" />}
             {label && <span>{label}</span>}
-          </div>
+          </Label>
           {right}
         </header>
       )}
-      <motion.span
-        aria-hidden
-        variants={{ rest: { scale: 0, rotate: 0 }, hover: { scale: 1, rotate: 90 } }}
-        transition={{ type: "spring", stiffness: 500, damping: 26 }}
-        className="pointer-events-none absolute right-0 bottom-0 h-3 w-3 origin-bottom-right bg-ink"
-      />
       {children}
-    </motion.section>
+    </section>
   );
 }
 
-export function Tag({ tone, children }: { tone: "acid" | "blaze" | "ink" | "paper"; children: ReactNode }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 border-2 border-ink px-2 py-1 font-mono text-xs font-bold uppercase tracking-wider ${toneCls[tone]}`}
-    >
-      {children}
-    </span>
-  );
+/** Tiny square status mark (acid = good / today, blaze = up / injection / warning). */
+export function Dot({ tone, className = "" }: { tone: "acid" | "blaze" | "ink"; className?: string }) {
+  const bg = tone === "acid" ? "bg-acid" : tone === "blaze" ? "bg-blaze" : "bg-ink";
+  return <span aria-hidden className={`inline-block h-2 w-2 shrink-0 border border-ink ${bg} ${className}`} />;
 }

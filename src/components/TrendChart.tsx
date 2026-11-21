@@ -17,10 +17,10 @@ import {
 } from "recharts";
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { addDays, isDateKey, shortLabel, weekdayKo } from "@/lib/date";
-import { weeklyStats, windowAverage, type DietStore, type WeeklyStats } from "@/lib/store";
+import { weeklyStats, windowAverage, type DietStore } from "@/lib/store";
 import { MAIN_CATEGORIES, type AppData } from "@/lib/types";
 import { Syringe } from "lucide-react";
-import { AnimatedNumber, Cell } from "./ui";
+import { AnimatedNumber, Cell, Dot, Label } from "./ui";
 
 type Range = "7" | "30" | "all";
 const RANGES: { key: Range; label: string }[] = [
@@ -92,65 +92,44 @@ function buildSeries(data: AppData, selected: string, range: Range): Point[] {
 /** Diamond marker path centred on (cx, cy). */
 const diamond = (cx: number, cy: number, r: number) => `M${cx} ${cy - r}L${cx + r} ${cy}L${cx} ${cy + r}L${cx - r} ${cy}Z`;
 
-/** Legend entries drawn with the same strokes/markers as the chart (22×12 swatches). */
+const INK = "#000";
+const BLAZE = "#FF4D00";
+const ACID = "#CCFF00";
+const PAPER = "#F4F4F0";
+const AXIS_TICK = { fill: "rgba(0,0,0,0.5)", fontSize: 10.5, fontFamily: "var(--font-jetbrains)" };
+
+/** Legend: same strokes/markers as the plot, drawn small (18×10). */
 const LEGEND: { label: string; icon: ReactNode }[] = [
   {
     label: "체중",
     icon: (
       <>
-        <line x1="0" y1="6" x2="22" y2="6" stroke="#000" strokeWidth="2.5" />
-        <rect x="7.5" y="2.5" width="7" height="7" fill="#F4F4F0" stroke="#000" strokeWidth="2" />
+        <line x1="0" y1="5" x2="18" y2="5" stroke={INK} strokeWidth="2" />
+        <rect x="6.5" y="2.5" width="5" height="5" fill={PAPER} stroke={INK} strokeWidth="1.5" />
       </>
     ),
   },
   {
     label: "7일 평균",
-    icon: <line x1="0" y1="6" x2="22" y2="6" stroke="#000" strokeOpacity="0.55" strokeWidth="1.5" strokeDasharray="4 4" />,
+    icon: <line x1="0" y1="5" x2="18" y2="5" stroke={INK} strokeOpacity="0.4" strokeWidth="1.5" strokeDasharray="3 3" />,
   },
-  {
-    label: "주사일",
-    icon: (
-      <>
-        <line x1="11" y1="0" x2="11" y2="12" stroke="#FF4D00" strokeOpacity="0.55" strokeWidth="1.5" />
-        <path d={diamond(11, 6, 5)} fill="#FF4D00" stroke="#000" strokeWidth="1.5" />
-      </>
-    ),
-  },
-  {
-    label: "목표",
-    icon: <line x1="0" y1="6" x2="22" y2="6" stroke="#FF4D00" strokeWidth="2" strokeDasharray="6 4" />,
-  },
-  {
-    label: "선택일",
-    icon: <rect x="5" y="0.5" width="11" height="11" fill="#CCFF00" stroke="#000" strokeWidth="2" />,
-  },
+  { label: "주사", icon: <path d={diamond(9, 5, 4)} fill={BLAZE} stroke={INK} strokeWidth="1" /> },
+  { label: "목표", icon: <line x1="0" y1="5" x2="18" y2="5" stroke={INK} strokeOpacity="0.55" strokeWidth="1" strokeDasharray="1 3" /> },
 ];
 
-/** 7D AVG bento cell: average of the 7 days ending at `selected` and Δ vs. the 7 days before. */
-function WeeklyCell({ stats }: { stats: WeeklyStats }) {
-  const { current, previous, delta } = stats;
-  const tone = delta === null ? "bg-paper" : delta < 0 ? "bg-acid" : delta > 0 ? "bg-blaze" : "bg-paper";
+/** One figure in the summary strip. */
+function Stat({ label, children, sub }: { label: string; children: ReactNode; sub?: ReactNode }) {
   return (
-    <div className="col-span-2 flex flex-col justify-between gap-2 bg-ink px-4 py-3 text-paper lg:col-span-1">
-      <dt className="flex items-center justify-between font-mono text-[11px] tracking-[0.14em]">
-        <span className="text-acid">7D AVG</span>
-        <span className="opacity-60">{current ? `${current.count}/7일` : "—"}</span>
-      </dt>
-      <dd className="flex flex-wrap items-end justify-between gap-2">
-        <span className="display-tight text-4xl lg:text-5xl">
-          {current ? <AnimatedNumber value={current.avg} /> : "—"}
-        </span>
-        <span className={`border-2 border-paper px-1.5 py-0.5 font-mono text-[11px] font-bold text-ink ${tone}`}>
-          {delta === null
-            ? previous
-              ? "Δ 7D —"
-              : "이전 7일 기록 없음"
-            : `Δ 7D ${delta < 0 ? "▼" : delta > 0 ? "▲" : "■"} ${delta > 0 ? "+" : ""}${delta.toFixed(1)}`}
-        </span>
-      </dd>
+    <div className="flex min-w-0 flex-col gap-1.5 bg-paper px-5 py-4 md:px-6">
+      <Label>{label}</Label>
+      <div className="flex items-end gap-1.5">{children}</div>
+      {sub && <div className="font-mono text-[10.5px] text-ink/55">{sub}</div>}
     </div>
   );
 }
+
+const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n).toFixed(1)}`;
+const trendTone = (n: number | null): "acid" | "blaze" | "ink" => (n === null || Math.abs(n) < 0.05 ? "ink" : n < 0 ? "acid" : "blaze");
 
 export function TrendChart({
   store,
@@ -177,6 +156,7 @@ export function TrendChart({
   const hi = Math.ceil(max + 0.5);
   const weekly = useMemo(() => weeklyStats(data, selected), [data, selected]);
   const injDays = series.filter((p) => p.inj).map((p) => p.key);
+  const big = "display-tight text-[2rem] md:text-[2.5rem]";
 
   return (
     <Cell
@@ -184,72 +164,90 @@ export function TrendChart({
       label="Trend"
       className="col-span-6 md:col-span-12"
       right={
-        <div className="flex border-2 border-ink">
+        <div role="tablist" aria-label="기간" className="-my-1 flex gap-1">
           {RANGES.map((r) => (
             <button
               key={r.key}
               type="button"
+              role="tab"
+              aria-selected={range === r.key}
               onClick={() => setRange(r.key)}
-              className="relative px-3 py-1 font-mono text-xs font-bold [&:not(:first-child)]:border-l-2 [&:not(:first-child)]:border-ink"
+              className={`relative px-2.5 py-1.5 font-mono text-[11px] font-bold tracking-[0.08em] transition-colors ${
+                range === r.key ? "text-ink" : "text-ink/40 hover:text-ink"
+              }`}
             >
+              {r.label}
               {range === r.key && (
                 <motion.span
-                  layoutId="range-pill"
-                  className="absolute inset-0 bg-ink"
+                  layoutId="range-underline"
+                  className="absolute inset-x-2 bottom-0.5 h-[2px] bg-ink"
                   transition={{ type: "spring", stiffness: 500, damping: 35 }}
                 />
               )}
-              <span className={`relative ${range === r.key ? "text-acid" : ""}`}>{r.label}</span>
             </button>
           ))}
         </div>
       }
     >
-      <div className="grid flex-1 grid-cols-1 lg:grid-cols-[220px_1fr]">
-        <dl className="mt-3 grid grid-cols-2 gap-px border-y-2 border-ink bg-ink sm:grid-cols-[1fr_1fr_1fr] lg:grid-cols-1 lg:border-y-0 lg:border-r-2">
-          {[
-            ["LOW", hasData ? min.toFixed(1) : "—"],
-            ["HIGH", hasData ? max.toFixed(1) : "—"],
-            ["Δ PERIOD", hasData ? `${change > 0 ? "+" : ""}${change.toFixed(1)}` : "—"],
-          ].map(([k, v], i) => (
-            <div
-              key={k}
-              className={`flex flex-col justify-between bg-paper px-4 py-2.5 ${i === 2 ? "col-span-2 sm:col-span-1" : ""} ${i === 2 && change < 0 ? "!bg-acid" : i === 2 && change > 0 ? "!bg-blaze" : ""}`}
-            >
-              <dt className="font-mono text-[11px] tracking-[0.14em]">{k}</dt>
-              <dd className="display-tight text-3xl md:text-4xl">{v}</dd>
-            </div>
-          ))}
-          <div className="col-span-2 grid sm:col-span-3 lg:col-span-1">
-            <WeeklyCell stats={weekly} />
-          </div>
-        </dl>
+      {/* Summary strip: four figures side by side, hairline separated */}
+      <dl className="mt-3 grid grid-cols-2 gap-px border-y border-ink/15 bg-ink/15 sm:grid-cols-4">
+        <Stat label="Low">
+          <span className={big}>{hasData ? min.toFixed(1) : "—"}</span>
+        </Stat>
+        <Stat label="High">
+          <span className={big}>{hasData ? max.toFixed(1) : "—"}</span>
+        </Stat>
+        <Stat
+          label="Δ 기간"
+          sub={
+            hasData && (
+              <span className="flex items-center gap-1.5">
+                <Dot tone={trendTone(change)} />
+                {RANGES.find((r) => r.key === range)?.label} 첫 기록 대비
+              </span>
+            )
+          }
+        >
+          <span className={`${big} ${trendTone(change) === "blaze" ? "text-blaze" : ""}`}>{hasData ? signed(change) : "—"}</span>
+        </Stat>
+        <Stat
+          label="7일 평균"
+          sub={
+            weekly.delta !== null ? (
+              <span className="flex items-center gap-1.5">
+                <Dot tone={trendTone(weekly.delta)} />
+                이전 7일 대비 {signed(weekly.delta)}
+              </span>
+            ) : (
+              <span>{weekly.current ? `${weekly.current.count}/7일 기록` : "기록 없음"}</span>
+            )
+          }
+        >
+          <span className={big}>{weekly.current ? <AnimatedNumber value={weekly.current.avg} /> : "—"}</span>
+        </Stat>
+      </dl>
 
-        <div className="flex h-[300px] flex-col md:h-[380px]">
-          {/* Legend: its own strip above the plot, so it never sits on top of lines, dots or the GOAL label */}
-          <ul
-            aria-label="그래프 범례"
-            className="mx-3 mt-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-dashed border-ink/40 pb-2 font-mono text-[10px] font-bold uppercase md:mx-4"
-          >
-            {LEGEND.map((l) => (
-              <li key={l.label} className="flex items-center gap-1.5">
-                <svg width="22" height="12" aria-hidden className="shrink-0">
-                  {l.icon}
-                </svg>
-                {l.label}
-              </li>
-            ))}
-          </ul>
-          <div className="relative min-h-0 flex-1 px-1 pt-2 pb-2 md:px-2">
+      <div className="flex h-[280px] flex-col md:h-[360px]">
+        <ul aria-label="그래프 범례" className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 px-5 pt-3 md:px-6">
+          {LEGEND.map((l) => (
+            <li key={l.label} className="flex items-center gap-1.5 font-mono text-[10.5px] text-ink/55">
+              <svg width="18" height="10" aria-hidden className="shrink-0">
+                {l.icon}
+              </svg>
+              {l.label}
+            </li>
+          ))}
+        </ul>
+        <div className="relative min-h-0 flex-1 px-1 pt-1 pb-3 md:px-3">
           {series.filter((p) => p.weight !== null).length < 1 ? (
-            <div className="flex h-full items-center justify-center font-mono text-sm opacity-60">
-              — 이 기간에 기록이 없습니다. 설정에서 샘플 데이터를 채워보세요.
+            <div className="flex h-full items-center justify-center font-mono text-[12px] text-ink/45">
+              이 기간에 기록이 없습니다 · 설정에서 샘플 데이터를 채워 보세요
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={series}
-                margin={{ top: 12, right: 24, bottom: 0, left: 0 }}
+                margin={{ top: 12, right: 20, bottom: 0, left: 0 }}
                 onClick={(state) => {
                   const k = resolveKey(state, series);
                   if (k) onSelect(k);
@@ -258,56 +256,56 @@ export function TrendChart({
                 <XAxis
                   dataKey="key"
                   tickFormatter={shortLabel}
-                  axisLine={{ stroke: "#000", strokeWidth: 2 }}
+                  axisLine={{ stroke: INK, strokeWidth: 1 }}
                   tickLine={false}
-                  tick={{ fill: "#000", fontSize: 11, fontFamily: "var(--font-jetbrains)" }}
+                  tick={AXIS_TICK}
                   interval="preserveStartEnd"
-                  minTickGap={28}
-                  tickMargin={8}
+                  minTickGap={32}
+                  tickMargin={10}
                 />
                 <YAxis
                   domain={[lo, hi]}
                   axisLine={false}
                   tickLine={false}
-                  width={44}
+                  width={40}
                   tickCount={5}
-                  tick={{ fill: "#000", fontSize: 11, fontFamily: "var(--font-jetbrains)" }}
+                  tick={AXIS_TICK}
                   allowDecimals={false}
                 />
                 <ReferenceLine
                   y={goal}
-                  stroke="#FF4D00"
-                  strokeWidth={2}
-                  strokeDasharray="6 4"
+                  stroke={INK}
+                  strokeOpacity={0.55}
+                  strokeWidth={1}
+                  strokeDasharray="1 4"
                   ifOverflow="hidden"
                   label={{
-                    value: `GOAL ${goal.toFixed(1)}`,
-                    position: "insideTopRight",
-                    fill: "#FF4D00",
-                    fontSize: 11,
+                    value: `목표 ${goal.toFixed(1)}`,
+                    position: "insideBottomRight",
+                    fill: "rgba(0,0,0,0.55)",
+                    fontSize: 10.5,
                     fontFamily: "var(--font-jetbrains)",
-                    fontWeight: 700,
                   }}
                 />
-                {/* injection days: thin orange guides, visible even on days without a weigh-in */}
+                {/* injection days: faint orange guides, visible even on days without a weigh-in */}
                 {injDays.map((k) => (
-                  <ReferenceLine key={`inj-${k}`} x={k} stroke="#FF4D00" strokeWidth={1.5} strokeOpacity={0.55} ifOverflow="hidden" />
+                  <ReferenceLine key={`inj-${k}`} x={k} stroke={BLAZE} strokeWidth={1} strokeOpacity={0.35} ifOverflow="hidden" />
                 ))}
-                <ReferenceLine x={selected} stroke="#000" strokeWidth={1} strokeDasharray="2 3" ifOverflow="hidden" />
+                <ReferenceLine x={selected} stroke={INK} strokeOpacity={0.35} strokeWidth={1} ifOverflow="hidden" />
                 <Line
                   type="monotone"
                   dataKey="ma7"
-                  stroke="#000"
+                  stroke={INK}
                   strokeWidth={1.5}
-                  strokeOpacity={0.55}
-                  strokeDasharray="4 4"
+                  strokeOpacity={0.35}
+                  strokeDasharray="3 4"
                   dot={false}
                   activeDot={false}
                   connectNulls
                   isAnimationActive={false}
                 />
                 <Tooltip
-                  cursor={{ stroke: "#000", strokeWidth: 1.5 }}
+                  cursor={{ stroke: INK, strokeOpacity: 0.3, strokeWidth: 1 }}
                   content={(p: TooltipContentProps<ValueType, NameType>) => (
                     <ChartTooltip active={p.active} dayKey={tooltipKey(p)} data={data} />
                   )}
@@ -316,8 +314,8 @@ export function TrendChart({
                 <Line
                   type="linear"
                   dataKey="weight"
-                  stroke="#000"
-                  strokeWidth={2.5}
+                  stroke={INK}
+                  strokeWidth={2}
                   connectNulls
                   isAnimationActive={false}
                   dot={(props: DotItemDotProps) => {
@@ -325,14 +323,12 @@ export function TrendChart({
                     if (typeof cx !== "number" || typeof cy !== "number" || !isPoint(payload) || payload.weight === null)
                       return <g key={index} />;
                     const sel = payload.key === selected;
+                    const dense = series.length > 40;
                     if (payload.inj) {
-                      // injection day → orange diamond (acid when selected)
-                      const r = sel ? 9 : series.length > 40 ? 5 : 7;
-                      return (
-                        <path key={index} d={diamond(cx, cy, r)} fill={sel ? "#CCFF00" : "#FF4D00"} stroke="#000" strokeWidth={2} />
-                      );
+                      const r = sel ? 7 : dense ? 4 : 5;
+                      return <path key={index} d={diamond(cx, cy, r)} fill={sel ? ACID : BLAZE} stroke={INK} strokeWidth={1.5} />;
                     }
-                    const s = sel ? 12 : series.length > 40 ? 4 : 7;
+                    const s = sel ? 10 : dense ? 3 : 5;
                     return (
                       <rect
                         key={index}
@@ -340,91 +336,72 @@ export function TrendChart({
                         y={cy - s / 2}
                         width={s}
                         height={s}
-                        fill={sel ? "#CCFF00" : "#F4F4F0"}
-                        stroke="#000"
-                        strokeWidth={2}
+                        fill={sel ? ACID : PAPER}
+                        stroke={INK}
+                        strokeWidth={sel ? 2 : 1.5}
                       />
                     );
                   }}
                   activeDot={(props: ActiveDotProps) => {
                     const { cx, cy } = props;
                     if (typeof cx !== "number" || typeof cy !== "number") return <g />;
-                    return (
-                      <rect
-                        x={cx - 8}
-                        y={cy - 8}
-                        width={16}
-                        height={16}
-                        fill="#FF4D00"
-                        stroke="#000"
-                        strokeWidth={2}
-                        style={{ cursor: "pointer" }}
-                      />
-                    );
+                    return <rect x={cx - 6} y={cy - 6} width={12} height={12} fill={INK} style={{ cursor: "pointer" }} />;
                   }}
                 />
               </LineChart>
             </ResponsiveContainer>
           )}
-          </div>
         </div>
       </div>
     </Cell>
   );
 }
 
+/** Minimal tooltip: date + weight, then injection / note / meals as plain rows. */
 function ChartTooltip({ active, dayKey, data }: { active?: boolean; dayKey: string | null; data: AppData }) {
   if (!active || !dayKey) return null;
   const day = data.days[dayKey];
   if (!day) return null;
-  const label = dayKey;
   const injections = day.logs.injection ?? [];
   const items = MAIN_CATEGORIES.map((c) => ({ ...c, list: day.logs[c.key] ?? [] })).filter((c) => c.list.length);
   if (day.weight === undefined && !items.length && !injections.length && !day.note) return null;
-  // Long content is clamped per section (not truncated to one line), so the card keeps its shape.
   return (
-    <div className="w-72 max-w-[calc(100vw-2.5rem)] border-2 border-ink bg-paper font-mono text-[11px] leading-snug shadow-[5px_5px_0_0_#000]">
-      <div className="flex items-center justify-between gap-2 border-b-2 border-ink bg-ink px-3 py-1.5 font-bold text-paper">
-        <span className="whitespace-nowrap">
-          {label.replaceAll("-", ".")} ({weekdayKo(label)})
+    <div className="w-72 max-w-[calc(100vw-2.5rem)] border border-ink bg-paper font-mono text-[11px] leading-snug">
+      <div className="flex items-baseline justify-between gap-3 px-4 pt-3">
+        <span className="text-ink/55">
+          {dayKey.replaceAll("-", ".")} {weekdayKo(dayKey)}
         </span>
-        <span className="whitespace-nowrap text-acid">CLICK → OPEN</span>
+        <span className="text-[10px] uppercase tracking-[0.12em] text-ink/40">click</span>
       </div>
-
-      <div className="flex items-end gap-1 px-3 pt-2 pb-1">
-        <span className={`display-tight text-5xl ${day.weight === undefined ? "opacity-25" : ""}`}>
+      <div className="flex items-end gap-1 px-4 pt-1 pb-3">
+        <span className={`display-tight text-[2.5rem] ${day.weight === undefined ? "text-ink/20" : ""}`}>
           {day.weight !== undefined ? day.weight.toFixed(1) : "—"}
         </span>
-        <span className="display-tight pb-1 text-lg">KG</span>
+        <span className="display-tight pb-1 text-base text-ink/60">kg</span>
       </div>
 
-      {(injections.length > 0 || day.note) && (
-        <div className="space-y-1.5 px-3 pt-1 pb-2">
-          {injections.length > 0 && (
-            <div className="flex items-start gap-1.5 border-2 border-ink bg-blaze px-2 py-1 font-bold">
-              <Syringe size={13} strokeWidth={2.5} className="mt-px shrink-0" />
-              <span className="line-clamp-2 min-w-0 break-words break-keep">
-                {injections.map((l) => l.text).join(" / ")}
-              </span>
-            </div>
-          )}
-          {day.note && (
-            <p className="flex items-start gap-1.5 border-2 border-ink px-2 py-1">
-              <span className="shrink-0 bg-ink px-1 font-bold text-acid">NOTE</span>
-              <span className="line-clamp-3 min-w-0 break-words break-keep">{day.note}</span>
-            </p>
-          )}
-        </div>
-      )}
-
-      <dl className="grid grid-cols-[2.75rem_1fr] gap-x-2 gap-y-1 border-t-2 border-ink px-3 pt-2 pb-3">
-        {items.length === 0 && <dd className="col-span-2 opacity-50">— 식단·운동 기록 없음</dd>}
+      <dl className="grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-1.5 border-t border-ink/15 px-4 py-3">
+        {injections.length > 0 && (
+          <>
+            <dt className="flex items-center gap-1 text-blaze">
+              <Syringe size={11} strokeWidth={2} /> 주사
+            </dt>
+            <dd className="line-clamp-2 min-w-0 break-words break-keep">{injections.map((l) => l.text).join(" / ")}</dd>
+          </>
+        )}
+        {day.note && (
+          <>
+            <dt className="text-ink/55">메모</dt>
+            <dd className="line-clamp-3 min-w-0 break-words break-keep">{day.note}</dd>
+          </>
+        )}
+        {items.length === 0 && !injections.length && !day.note && <dd className="col-span-2 text-ink/45">식단·운동 기록 없음</dd>}
         {items.map((c) => (
           <Fragment key={c.key}>
-            <dt className={`font-bold ${c.key === "exercise" ? "text-blaze" : ""}`}>{c.label}</dt>
+            <dt className="text-ink/55">{c.label}</dt>
             <dd className="line-clamp-2 min-w-0 break-words break-keep">
               {c.list.map((l) => l.text).join(", ")}
-              {c.list.length > 1 && <span className="ml-1 opacity-50">({c.list.length})</span>}
+              {c.list.length > 1 && <span className="ml-1 text-ink/40">({c.list.length})</span>}
             </dd>
           </Fragment>
         ))}

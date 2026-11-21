@@ -145,7 +145,7 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
             animate={{ x: 0, y: 0, opacity: 1, rotate: 0 }}
             exit={{ x: 40, opacity: 0 }}
             transition={{ type: "spring", stiffness: 420, damping: 32 }}
-            className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto border-2 border-ink bg-paper shadow-[8px_8px_0_0_#000]"
+            className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto border-[1.5px] border-ink bg-paper shadow-[0_24px_60px_-20px_rgba(0,0,0,0.35)]"
           >
             <div className="flex items-center justify-between border-b-2 border-ink bg-ink px-4 py-3 text-paper">
               <span className="font-mono text-xs font-bold uppercase tracking-[0.14em]">[ Settings ]</span>
@@ -154,7 +154,7 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
                 type="button"
                 onClick={onClose}
                 aria-label="설정 닫기"
-                className="-my-2 -mr-2 flex h-10 w-10 items-center justify-center hover:bg-acid hover:text-ink focus-visible:outline-acid"
+                className="-my-2 -mr-2 flex h-10 w-10 items-center justify-center hover:bg-paper hover:text-ink focus-visible:outline-acid"
               >
                 <X size={20} strokeWidth={2.5} />
               </button>
@@ -202,7 +202,7 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
                         requestAnimationFrame(() => (e.target as HTMLInputElement).blur());
                       }
                     }}
-                    className={`display-tight w-40 bg-transparent text-center text-7xl outline-none focus:bg-acid ${goalError ? "text-blaze" : ""}`}
+                    className={`display-tight w-40 bg-transparent text-center text-7xl border-b-[3px] border-transparent outline-none focus:border-ink ${goalError ? "text-blaze" : ""}`}
                   />
                   <span className="display-tight pb-1 text-2xl">KG</span>
                 </div>
@@ -238,7 +238,7 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className={`border-2 border-ink p-3 ${confirm === "sample" ? "bg-acid" : "bg-blaze"}`}
+                    className={`border-[1.5px] p-3 ${confirm === "sample" ? "border-ink" : "border-blaze"}`}
                   >
                     <p className="mb-3 font-mono text-[13px] font-bold leading-snug">
                       {confirm === "reset"
@@ -248,7 +248,7 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
                           : "현재 기록을 백업 파일의 내용으로 덮어씁니다. 필요하면 먼저 현재 데이터를 내보내 두세요."}
                     </p>
                     {confirm === "import" && pendingSummary && (
-                      <dl className="mb-3 grid grid-cols-3 gap-px border-2 border-ink bg-ink font-mono text-[11px]">
+                      <dl className="mb-3 grid grid-cols-3 gap-px border border-ink/15 bg-ink/15 font-mono text-[11px]">
                         {[
                           ["DAYS", pendingSummary.days],
                           ["WEIGHTS", pendingSummary.weights],
@@ -320,10 +320,10 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
                       브라우저 캐시를 지우면 기록이 사라집니다. 주기적으로 백업 파일을 저장해 두세요.
                     </p>
                     {error && (
-                      <p className="border-2 border-ink bg-blaze px-2 py-1.5 font-mono text-[11px] font-bold">✕ {error}</p>
+                      <p className="border-l-[3px] border-blaze px-2 py-1.5 font-mono text-[11px] text-blaze">✕ {error}</p>
                     )}
                     <BrutalButton
-                      tone="acid"
+                      tone="ink"
                       className="h-12 w-full justify-between px-4"
                       onClick={() => (recordCount ? setConfirm("sample") : (fillSample(), done("샘플 14일 생성 완료")))}
                     >
@@ -344,7 +344,7 @@ export function SettingsModal({ open, onClose, store }: { open: boolean; onClose
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="mt-3 inline-block bg-ink px-2 py-1 font-mono text-[11px] font-bold text-acid"
+                    className="mt-3 flex items-center gap-1.5 font-mono text-[11px]"
                   >
                     ✓ {flash}
                   </motion.p>
