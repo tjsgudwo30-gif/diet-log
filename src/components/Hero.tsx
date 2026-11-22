@@ -114,8 +114,6 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
 
   return (
     <>
-      {/* Phones: two key figures + folded details (entry happens in the "오늘 기록" card) */}
-      <PhoneSummary store={store} selected={selected} />
 
       {/* 01 · Main weight — the headline figure */}
       <Cell
@@ -394,7 +392,7 @@ const toneOf = (n: number | null): "acid" | "blaze" | "ink" =>
  * Phone-only summary: "목표까지" and "7일 평균" side by side; everything else
  * (change, pace, ETA, injection rhythm, streak) folded under "자세히 보기".
  */
-function PhoneSummary({ store, selected }: { store: DietStore; selected: string }) {
+export function PhoneSummary({ store, selected }: { store: DietStore; selected: string }) {
   const { data } = store;
   const [open, setOpen] = useState(false);
   const goal = data.goalWeight;
@@ -446,7 +444,7 @@ function PhoneSummary({ store, selected }: { store: DietStore; selected: string 
   ];
 
   return (
-    <section aria-label="요약" className="col-span-6 md:hidden">
+    <section aria-label="요약">
       <div className="grid grid-cols-2">
         <div className="flex min-w-0 flex-col gap-2 border-r border-ink/15 p-4">
           <Label>목표까지</Label>

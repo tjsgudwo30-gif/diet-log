@@ -8,7 +8,8 @@ import { Header } from "./Header";
 import { Hero } from "./Hero";
 import { SettingsModal } from "./SettingsModal";
 import { TrendChart } from "./TrendChart";
-import { QuickBar } from "./QuickBar";
+import { useIsPhone } from "./ui";
+import { MobileApp } from "./mobile/MobileApp";
 
 export function Dashboard() {
   const store = useDietStore();
@@ -16,6 +17,8 @@ export function Dashboard() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [pulse, setPulse] = useState(0);
+  // Phones (< md) get their own app-style shell; md+ keeps the bento dashboard as is.
+  const phone = useIsPhone();
 
   // Chart point click: jump to that day, then bring its diet/exercise log into view.
   const selectFromChart = useCallback((k: string) => {
@@ -82,32 +85,49 @@ export function Dashboard() {
     );
   }
 
+  const openSettings = () => {
+    setCalendarOpen(false);
+    setSettingsOpen(true);
+  };
+
+  if (phone) {
+    return (
+      <>
+        <MobileApp
+          store={store}
+          selected={selected}
+          onMove={move}
+          onToday={() => setSelected(todayKey())}
+          onPick={setSelected}
+          onOpenSettings={openSettings}
+          calendarOpen={calendarOpen}
+          onCalendarOpenChange={setCalendarOpen}
+        />
+        <SettingsModal open={settingsOpen} onClose={closeSettings} store={store} />
+      </>
+    );
+  }
+
   return (
-    <main className="mx-auto max-w-[1600px] overflow-x-clip px-4 pt-3 pb-6 md:p-5">
-      {/* Phones: one column of separate cards (see .bento in globals.css); md+: the bento grid */}
+    <main className="mx-auto max-w-[1600px] p-5">
       <div className="bento grid-cols-6 md:grid-cols-12">
         <Header
           selected={selected}
           onMove={move}
           onToday={() => setSelected(todayKey())}
           streak={computeStreak(store.data)}
-          onOpenSettings={() => {
-            setCalendarOpen(false);
-            setSettingsOpen(true);
-          }}
+          onOpenSettings={openSettings}
           data={store.data}
           calendarOpen={calendarOpen}
           onCalendarOpenChange={setCalendarOpen}
           onPick={setSelected}
         />
-        {/* Phones only: the day's entry card right under the date bar */}
-        <QuickBar store={store} selected={selected} />
         <Hero store={store} selected={selected} />
         <TrendChart store={store} selected={selected} onSelect={selectFromChart} />
         <DailyLog store={store} selected={selected} pulse={pulse} />
       </div>
-      <footer className="flex flex-col gap-1 px-1 pt-4 font-mono text-[10.5px] text-ink/50 md:flex-row md:justify-between md:pt-3">
-        <span className="max-md:hidden">
+      <footer className="flex flex-col gap-1 px-1 pt-3 font-mono text-[10.5px] text-ink/50 md:flex-row md:justify-between">
+        <span>
           <b className="font-bold text-ink/70">WEIGHT/LOG</b> · 체중 · 식단 · 운동 · 주사 · 컨디션 다이어트 데일리 트래커
         </span>
         <span>

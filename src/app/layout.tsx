@@ -37,7 +37,9 @@ export const viewport: Viewport = {
   themeColor: "#111111",
   width: "device-width",
   initialScale: 1,
-  viewportFit: "cover", // lets the quick bar use env(safe-area-inset-bottom) on iPhone
+  viewportFit: "cover", // lets the tab bar / sheet use env(safe-area-inset-*) on iPhone
+  // Android: the keyboard shrinks the layout viewport, so the bottom sheet stays above it
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
