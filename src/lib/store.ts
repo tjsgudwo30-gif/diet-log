@@ -396,7 +396,7 @@ export function parseBackup(raw: unknown): AppData {
 }
 
 export function summarize(data: AppData) {
-  const keys = Object.keys(data.days).sort();
+  const keys = dayIndex(data).all;
   let weights = 0;
   let logs = 0;
   let injections = 0;
@@ -412,6 +412,49 @@ export function summarize(data: AppData) {
     if (d.note) notes++;
   }
   return { days: keys.length, weights, logs, injections, notes, from: keys[0], to: keys[keys.length - 1] };
+}
+
+/* ---------- Sorted day index (shared by all derived metrics) ---------- */
+
+export interface DayIndex {
+  /** Every stored day key, ascending. */
+  all: string[];
+  /** Days with a recorded weight, ascending. */
+  weights: string[];
+  /** Days with at least one injection log, ascending. */
+  injections: string[];
+}
+
+/**
+ * Days are only ever replaced immutably (every write creates a new `days` object),
+ * so one sorted index per `days` object can be shared by every helper and component
+ * in the same render instead of each doing its own Object.keys → filter → sort.
+ */
+const indexCache = new WeakMap<AppData["days"], DayIndex>();
+
+export function dayIndex(data: AppData): DayIndex {
+  const cached = indexCache.get(data.days);
+  if (cached) return cached;
+  const all = Object.keys(data.days).sort();
+  const idx: DayIndex = {
+    all,
+    weights: all.filter((k) => data.days[k].weight !== undefined),
+    injections: all.filter((k) => (data.days[k].logs.injection?.length ?? 0) > 0),
+  };
+  indexCache.set(data.days, idx);
+  return idx;
+}
+
+/** Index of the last key ≤ `key` (or < `key` when strict) in an ascending list; −1 when none. */
+function lastIndexBefore(sorted: string[], key: string, strict = false): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (strict ? sorted[mid] < key : sorted[mid] <= key) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo - 1;
 }
 
 /* ---------- Derived metrics ---------- */
@@ -443,10 +486,8 @@ export function computeStreak(data: AppData): number {
 
 /** Most recent recorded weight strictly before `key`. */
 export function prevWeight(data: AppData, key: string): { key: string; weight: number } | null {
-  const keys = Object.keys(data.days)
-    .filter((k) => k < key && data.days[k].weight !== undefined)
-    .sort();
-  const k = keys[keys.length - 1];
+  const { weights } = dayIndex(data);
+  const k = weights[lastIndexBefore(weights, key, true)];
   return k ? { key: k, weight: data.days[k].weight! } : null;
 }
 
@@ -464,11 +505,8 @@ export function goalProgress(
   data: AppData,
   current: number
 ): { start: number; startKey: string; lost: number; total: number; pct: number } | null {
-  const keys = Object.keys(data.days)
-    .filter((k) => data.days[k].weight !== undefined)
-    .sort();
-  if (!keys.length) return null;
-  const startKey = keys[0];
+  const startKey = dayIndex(data).weights[0];
+  if (!startKey) return null;
   const start = data.days[startKey].weight!;
   const total = start - data.goalWeight;
   if (total <= 0.05) return null;
@@ -516,21 +554,103 @@ export function lastInjection(
   key: string,
   { strict = false }: { strict?: boolean } = {}
 ): { key: string; text: string; daysAgo: number } | null {
-  const keys = Object.keys(data.days)
-    .filter((k) => (strict ? k < key : k <= key) && (data.days[k].logs.injection?.length ?? 0) > 0)
-    .sort();
-  const k = keys[keys.length - 1];
+  const { injections } = dayIndex(data);
+  const k = injections[lastIndexBefore(injections, key, strict)];
   if (!k) return null;
   const list = data.days[k].logs.injection!;
   return { key: k, text: list[list.length - 1].text, daysAgo: diffDays(k, key) };
 }
 
+/** How many recent intervals the average cycle looks at (so an old, different schedule fades out). */
+export const CYCLE_WINDOW = 8;
+
+export interface InjectionCycle {
+  /** Injection days on or before the reference date. */
+  count: number;
+  /** Days between the two most recent injection days (null with fewer than 2). */
+  lastGap: number | null;
+  /** Mean interval over the last `gaps` intervals, rounded to 0.1 (null with fewer than 2). */
+  avgGap: number | null;
+  /** Number of intervals averaged (≤ CYCLE_WINDOW). */
+  gaps: number;
+}
+
+/**
+ * Injection rhythm up to and including `key`: the latest interval and the average cycle.
+ * Several injection logs on one day count as one injection day. The mean of consecutive
+ * intervals is simply (last − first) / n, so this is O(log n) on the shared index.
+ */
+export function injectionCycle(data: AppData, key: string): InjectionCycle {
+  const { injections } = dayIndex(data);
+  const end = lastIndexBefore(injections, key);
+  const count = end + 1;
+  if (count < 2) return { count, lastGap: null, avgGap: null, gaps: 0 };
+  const from = Math.max(0, end - CYCLE_WINDOW);
+  const gaps = end - from;
+  return {
+    count,
+    lastGap: diffDays(injections[end - 1], injections[end]),
+    avgGap: round1(diffDays(injections[from], injections[end]) / gaps),
+    gaps,
+  };
+}
+
+/** "7일" / "6.5일" — whole numbers without a trailing ".0". */
+export const fmtDays = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
+
+/* ---------- Weight pace (trend over a chart range) ---------- */
+
+/** A pace needs at least this many weigh-ins… */
+export const PACE_MIN_POINTS = 3;
+/** …spread over at least this many days (first to last weigh-in). */
+export const PACE_MIN_SPAN = 3;
+
+export type WeightPace =
+  | { ok: true; perWeek: number; count: number; span: number }
+  | { ok: false; reason: "few" | "short"; count: number; span: number };
+
+/**
+ * Average weekly change across ascending weigh-ins: the least-squares slope (kg/day) × 7,
+ * rounded to 0.1. A regression line is used instead of last − first so one bloated
+ * day at either end of the range doesn't swing the pace.
+ */
+export function weightPace(points: { key: string; weight: number }[]): WeightPace {
+  const count = points.length;
+  const span = count ? diffDays(points[0].key, points[count - 1].key) : 0;
+  if (count < PACE_MIN_POINTS) return { ok: false, reason: "few", count, span };
+  if (span < PACE_MIN_SPAN) return { ok: false, reason: "short", count, span };
+  const x0 = points[0].key;
+  let sx = 0;
+  let sy = 0;
+  let sxx = 0;
+  let sxy = 0;
+  for (const p of points) {
+    const x = diffDays(x0, p.key);
+    sx += x;
+    sy += p.weight;
+    sxx += x * x;
+    sxy += x * p.weight;
+  }
+  const den = count * sxx - sx * sx;
+  const perWeek = den ? round1(((count * sxy - sx * sy) / den) * 7) : NaN;
+  if (!Number.isFinite(perWeek)) return { ok: false, reason: "short", count, span };
+  return { ok: true, perWeek: perWeek === 0 ? 0 : perWeek, count, span }; // normalise −0
+}
+
+export type GoalEta = { kind: "reached" } | { kind: "flat" } | { kind: "weeks"; weeks: number };
+
+/** Weeks to the goal at `perWeek` (kg/week, negative = losing). "flat" when not trending down. */
+export function goalEta(current: number, goal: number, perWeek: number): GoalEta {
+  const left = current - goal;
+  if (left <= 0) return { kind: "reached" };
+  if (!(perWeek <= -0.1)) return { kind: "flat" };
+  const weeks = Math.ceil(left / -perWeek);
+  return Number.isFinite(weeks) ? { kind: "weeks", weeks } : { kind: "flat" };
+}
+
 /** Most recent day with any record, preferring days up to today (future-dated entries only as a fallback). */
 export function latestRecordKey(data: AppData): string | null {
-  const today = todayKey();
-  const keys = Object.keys(data.days)
-    .filter((k) => hasAnything(data.days[k]))
-    .sort();
-  const past = keys.filter((k) => k <= today);
-  return past[past.length - 1] ?? keys[keys.length - 1] ?? null;
+  const keys = dayIndex(data).all.filter((k) => hasAnything(data.days[k]));
+  const i = lastIndexBefore(keys, todayKey());
+  return keys[i] ?? keys[keys.length - 1] ?? null;
 }

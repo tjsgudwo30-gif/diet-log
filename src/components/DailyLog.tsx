@@ -17,7 +17,16 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
-import { appendNoteToken, hasDayRecord, lastInjection, NOTE_SEP, noteTokens, type DietStore } from "@/lib/store";
+import {
+  appendNoteToken,
+  fmtDays,
+  hasDayRecord,
+  injectionCycle,
+  lastInjection,
+  NOTE_SEP,
+  noteTokens,
+  type DietStore,
+} from "@/lib/store";
 import { shortLabel, todayKey, weekday } from "@/lib/date";
 import { MAIN_CATEGORIES, NOTE_MAX, NOTE_PRESETS, type Category, type DayEntry } from "@/lib/types";
 import { Chip, Dot, Label } from "./ui";
@@ -641,6 +650,15 @@ function LogColumn({
   const last = isInj ? lastInjection(data, selected, { strict: true }) : null;
   // "due" colouring only makes sense for today; on past days D+N is just informational
   const injectionDue = !!last && selected === todayKey() && !items.length && last.daysAgo >= 7;
+  // rhythm up to and including the selected day (on a dose day its own interval is D+N above)
+  const cycle = isInj ? injectionCycle(data, selected) : null;
+  const rhythm = cycle
+    ? [
+        !items.length && cycle.lastGap !== null && `최근 간격 ${fmtDays(cycle.lastGap)}`,
+        cycle.avgGap !== null && `평균 ${fmtDays(cycle.avgGap)} 주기`,
+        cycle.gaps > 0 && `${cycle.gaps + 1}회 기준`,
+      ].filter(Boolean)
+    : [];
 
   const submit = () => {
     if (!text.trim()) return;
@@ -674,6 +692,13 @@ function LogColumn({
                   </Chip>
                 )}
               </span>
+              {/* injection rhythm: one quiet line, only once there are two dose days to compare */}
+              {rhythm.length > 0 && (
+                <span className="basis-full text-[10.5px] tabular-nums text-ink/50">
+                  <span className="mr-2 uppercase tracking-[0.12em] text-ink/40">주기</span>
+                  {rhythm.join(" · ")}
+                </span>
+              )}
             </>
           ) : (
             <span className="text-ink/45">이전 투약 기록 없음 · 아래 태그로 약품/용량/부위를 기록하세요</span>

@@ -17,7 +17,19 @@ import {
 } from "recharts";
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { addDays, isDateKey, shortLabel, weekdayKo } from "@/lib/date";
-import { hasDayRecord, weeklyStats, windowAverage, type DietStore } from "@/lib/store";
+import {
+  dayIndex,
+  goalEta,
+  hasDayRecord,
+  PACE_MIN_POINTS,
+  PACE_MIN_SPAN,
+  weeklyStats,
+  weightPace,
+  windowAverage,
+  type DietStore,
+  type GoalEta,
+  type WeightPace,
+} from "@/lib/store";
 import { MAIN_CATEGORIES, type AppData } from "@/lib/types";
 import { Syringe } from "lucide-react";
 import { AnimatedNumber, Cell, Dot, Label } from "./ui";
@@ -60,9 +72,7 @@ function tooltipKey(p: TooltipContentProps<ValueType, NameType>): string | null 
 }
 
 function buildSeries(data: AppData, selected: string, range: Range): Point[] {
-  const recorded = Object.keys(data.days)
-    .filter((k) => data.days[k].weight !== undefined)
-    .sort();
+  const recorded = dayIndex(data).weights;
   let start: string;
   let end: string;
   if (range === "all") {
@@ -131,6 +141,49 @@ function Stat({ label, children, sub }: { label: string; children: ReactNode; su
 const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n).toFixed(1)}`;
 const trendTone = (n: number | null): "acid" | "blaze" | "ink" => (n === null || Math.abs(n) < 0.05 ? "ink" : n < 0 ? "acid" : "blaze");
 
+const etaText = (eta: GoalEta | null): string => {
+  if (!eta) return "목표 예상 —";
+  if (eta.kind === "reached") return "목표 체중 이하";
+  if (eta.kind === "flat") return "목표 예상 —";
+  if (eta.weeks <= 1) return "목표까지 1주 이내";
+  return eta.weeks > 104 ? "목표까지 2년+" : `목표까지 약 ${eta.weeks}주`;
+};
+
+/**
+ * Weekly pace for the chosen range: one slim full-width row under the four figures,
+ * so it adds a single line of height on mobile and a short third row on xl.
+ */
+function PaceRow({ pace, eta }: { pace: WeightPace; eta: GoalEta | null }) {
+  const v = pace.ok ? pace.perWeek : null;
+  const tone = trendTone(v);
+  return (
+    <div className="col-span-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 bg-paper px-5 py-2.5 sm:col-span-4 md:px-6 xl:col-span-2">
+      <div className="flex items-baseline gap-3">
+        <Label>주간 페이스</Label>
+        <span className="flex items-baseline gap-1">
+          <span className={`display-tight text-[1.625rem] tabular-nums ${tone === "blaze" ? "text-blaze" : v === null ? "text-ink/25" : ""}`}>
+            {v === null ? "—" : signed(v)}
+          </span>
+          <span className="font-mono text-[10.5px] text-ink/55">kg/주</span>
+        </span>
+      </div>
+      <span className="flex items-center gap-1.5 font-mono text-[10.5px] tabular-nums text-ink/55">
+        {pace.ok ? (
+          <>
+            <Dot tone={tone} />
+            {etaText(eta)}
+            <span className="text-ink/35">· {pace.count}회/{pace.span + 1}일</span>
+          </>
+        ) : pace.reason === "few" ? (
+          `체중 기록 ${PACE_MIN_POINTS}회 이상 필요`
+        ) : (
+          `기록 기간 ${PACE_MIN_SPAN + 1}일 이상 필요`
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function TrendChart({
   store,
   selected,
@@ -143,7 +196,13 @@ export function TrendChart({
   const { data } = store;
   const [range, setRange] = useState<Range>("30");
   const series = useMemo(() => buildSeries(data, selected, range), [data, selected, range]);
-  const values = series.map((p) => p.weight).filter((v): v is number => v !== null);
+  // one pass over the series: weigh-ins (ascending) feed min/max, change, pace and the empty state
+  const weighIns = useMemo(
+    () => series.filter((p): p is Point & { weight: number } => p.weight !== null),
+    [series]
+  );
+  const pace = useMemo(() => weightPace(weighIns), [weighIns]);
+  const values = weighIns.map((p) => p.weight);
   const hasData = values.length > 0;
   const min = hasData ? Math.min(...values) : 0;
   const max = hasData ? Math.max(...values) : 0;
@@ -168,7 +227,7 @@ export function TrendChart({
   }
   const weekly = useMemo(() => weeklyStats(data, selected), [data, selected]);
   const injDays = series.filter((p) => p.inj).map((p) => p.key);
-  const weighIns = series.filter((p) => p.weight !== null);
+  const eta = pace.ok && hasData ? goalEta(last, goal, pace.perWeek) : null;
   const minKey = weighIns.find((p) => p.weight === min)?.key;
   const maxKey = weighIns.find((p) => p.weight === max)?.key;
   const rangeLabel = range === "all" ? "전체 기간" : `최근 ${range}일`;
@@ -227,7 +286,7 @@ export function TrendChart({
 
       <div className="xl:grid xl:grid-cols-[21rem_1fr] xl:border-t xl:border-ink/15">
         {/* Summary strip: four figures side by side, hairline separated */}
-        <dl className="grid grid-cols-2 gap-px border-y border-ink/15 bg-ink/15 sm:grid-cols-4 xl:grid-cols-2 xl:grid-rows-2 xl:border-y-0 xl:border-r">
+        <dl className="grid grid-cols-2 gap-px border-y border-ink/15 bg-ink/15 sm:grid-cols-4 xl:grid-cols-2 xl:grid-rows-[1fr_1fr_auto] xl:border-y-0 xl:border-r">
           <Stat label="최저 체중" sub={minKey && `${shortLabel(minKey)} 기록`}>
             <span className={big}>{hasData ? min.toFixed(1) : "—"}</span>
           </Stat>
@@ -262,10 +321,11 @@ export function TrendChart({
           >
             <span className={big}>{weekly.current ? <AnimatedNumber value={weekly.current.avg} /> : "—"}</span>
           </Stat>
+          <PaceRow pace={pace} eta={eta} />
         </dl>
 
         <div className="relative h-[260px] px-1 pt-3 pb-3 md:h-[300px] md:px-3 xl:h-[310px]">
-          {series.filter((p) => p.weight !== null).length < 1 ? (
+          {!hasData ? (
             <div className="flex h-full items-center justify-center font-mono text-[12px] text-ink/45">
               이 기간에 기록이 없습니다 · 설정에서 샘플 데이터를 채워 보세요
             </div>

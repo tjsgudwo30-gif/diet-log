@@ -4,7 +4,17 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { shortLabel, todayKey, weekdayKo } from "@/lib/date";
-import { goalProgress, lastInjection, latestWeight, parseKg, prevWeight, type DietStore } from "@/lib/store";
+import {
+  dayIndex,
+  fmtDays,
+  goalProgress,
+  injectionCycle,
+  lastInjection,
+  latestWeight,
+  parseKg,
+  prevWeight,
+  type DietStore,
+} from "@/lib/store";
 import type { Category } from "@/lib/types";
 import { AnimatedNumber, Cell, Dot, Label } from "./ui";
 
@@ -56,7 +66,7 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
 
   const trend = delta === undefined ? null : delta < -0.04 ? "down" : delta > 0.04 ? "up" : "flat";
   const isToday = selected === todayKey();
-  const firstRun = !Object.values(data.days).some((d) => d.weight !== undefined);
+  const firstRun = dayIndex(data).weights.length === 0;
   const progress = weight !== undefined ? goalProgress(data, weight) : null;
 
   // Day facts: meals / exercise / injection status / note — links the weight to the rest of the log
@@ -68,6 +78,9 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
 
   const lastInj = lastInjection(data, selected, { strict: true });
   const injDue = isToday && !injectedToday && !!lastInj && lastInj.daysAgo >= 7;
+  const cycle = injectionCycle(data, selected);
+  // rhythm first: the detail line truncates, and the drug text is the long part
+  const cycleText = cycle.avgGap !== null ? `평균 ${fmtDays(cycle.avgGap)} 주기 · ` : "";
   const firstText = (keys: Category[]) =>
     keys
       .flatMap((k) => day?.logs[k] ?? [])
@@ -83,9 +96,9 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
       label: "주사",
       value: injectedToday ? "투약함" : lastInj ? `D+${lastInj.daysAgo}` : "—",
       detail: injectedToday
-        ? firstText(["injection"])
+        ? `${cycle.lastGap !== null ? `간격 ${fmtDays(cycle.lastGap)} · ` : ""}${cycleText}${firstText(["injection"])}`
         : lastInj
-          ? `${injDue ? "투약 예정일 · " : ""}지난 ${shortLabel(lastInj.key)} ${lastInj.text}`
+          ? `${injDue ? "투약 예정일 · " : ""}${cycleText}지난 ${shortLabel(lastInj.key)} ${lastInj.text}`
           : "투약 기록 없음",
       on: injectedToday || !!lastInj,
       dot: injectedToday ? "acid" : injDue ? "blaze" : undefined,
