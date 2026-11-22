@@ -410,7 +410,7 @@ function NoteCell({ store, selected }: { store: DietStore; selected: string }) {
                     e.currentTarget.blur();
                   }
                 }}
-                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[14px] outline-none placeholder:text-ink/30"
+                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-base outline-none placeholder:text-ink/30 md:text-[14px]"
               />
               <button
                 type="submit"
@@ -584,7 +584,7 @@ function LogEntry({
               e.currentTarget.blur();
             }
           }}
-          className="min-w-0 flex-1 bg-transparent py-1.5 font-mono text-[14px] outline-none md:text-[13px]"
+          className="min-w-0 flex-1 bg-transparent py-1.5 font-mono text-base outline-none md:text-[13px]"
         />
         <button
           type="submit"
@@ -748,7 +748,7 @@ function LogColumn({
           onChange={(e) => setText(e.target.value)}
           placeholder={PLACEHOLDER[cat] ?? "무엇을 먹었나요?"}
           aria-label={`${label} 추가`}
-          className="min-w-0 flex-1 bg-transparent py-2.5 font-mono text-[13px] outline-none placeholder:text-ink/30"
+          className="min-w-0 flex-1 bg-transparent py-2.5 font-mono text-base outline-none placeholder:text-ink/30 md:text-[13px]"
         />
         <motion.button
           type="submit"
@@ -811,7 +811,7 @@ function LogColumn({
                 onChange={(e) => setTagDraft(e.target.value)}
                 placeholder="#새태그"
                 aria-label="새 태그"
-                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[12px] outline-none placeholder:text-ink/30"
+                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-base outline-none placeholder:text-ink/30 md:text-[12px]"
               />
               <button type="submit" aria-label="태그 추가" className="flex w-9 items-center justify-center hover:text-ink">
                 <Plus size={14} strokeWidth={2} />

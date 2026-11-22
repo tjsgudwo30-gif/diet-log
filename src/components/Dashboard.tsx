@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { addDays, todayKey } from "@/lib/date";
 import { computeStreak, useDietStore } from "@/lib/store";
 import { DailyLog } from "./DailyLog";
@@ -26,10 +26,34 @@ export function Dashboard() {
     );
   }, []);
 
-  // Resolve "today" on the client to avoid server/client timezone mismatch.
+  // Resolve "today" on the client (avoids a server/client timezone mismatch) and keep it current.
+  // An installed home-screen app is often resumed from the background instead of reloaded,
+  // so after midnight it would otherwise keep showing — and saving to — yesterday.
+  // Re-check on resume / focus and once a minute; if the user was on "today", follow the
+  // new day. A past or future day they picked on purpose stays selected.
+  const todayRef = useRef<string | null>(null);
+  const [, setToday] = useState("");
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only date
-    setSelected(todayKey());
+    const sync = () => {
+      const now = todayKey();
+      const prev = todayRef.current;
+      if (now === prev) return;
+      todayRef.current = now;
+      setToday(now); // re-render so every "today" label / streak / due check updates
+      setSelected((s) => (s === null || s === prev ? now : s));
+    };
+    sync();
+    const onVisible = () => document.visibilityState === "visible" && sync();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", sync);
+    window.addEventListener("pageshow", sync);
+    const timer = setInterval(sync, 60_000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", sync);
+      window.removeEventListener("pageshow", sync);
+      clearInterval(timer);
+    };
   }, []);
 
   const move = useCallback((d: number) => setSelected((s) => (s ? addDays(s, d) : s)), []);

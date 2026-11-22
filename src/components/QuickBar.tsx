@@ -364,7 +364,7 @@ export function QuickBar({ store, selected }: { store: DietStore; selected: stri
             maxLength={cat === "note" ? NOTE_MAX : 500}
             aria-label={`${MODES.find((c) => c.key === cat)?.label ?? ""} 입력`}
             placeholder={PLACEHOLDER[cat] ?? `${MODES.find((c) => c.key === cat)?.label ?? ""} 기록`}
-            className="min-w-0 flex-1 bg-transparent px-1 font-mono text-[15px] outline-none placeholder:text-ink/30"
+            className="min-w-0 flex-1 bg-transparent px-1 font-mono text-base outline-none placeholder:text-ink/30"
           />
           <motion.button
             type="submit"

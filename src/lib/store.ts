@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppData,
   Category,
@@ -167,14 +167,46 @@ export function useDietStore() {
     setReady(true);
   }, []);
 
+  /** The value this tab last wrote, to tell our own saves apart from someone else's. */
+  const lastSaved = useRef<string | null>(null);
+
   useEffect(() => {
     if (!ready) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      const raw = JSON.stringify(data);
+      if (raw === lastSaved.current) return;
+      localStorage.setItem(STORAGE_KEY, raw);
+      lastSaved.current = raw;
     } catch {
       /* storage full or blocked */
     }
   }, [data, ready]);
+
+  // On Android the installed app and a Chrome tab share this storage. A copy left in the
+  // background would otherwise save its stale state over newer records on its next edit,
+  // so pick up outside changes when another tab writes or when this one comes back.
+  useEffect(() => {
+    if (!ready) return;
+    const resync = () => {
+      let raw: string | null = null;
+      try {
+        raw = localStorage.getItem(STORAGE_KEY);
+      } catch {
+        return;
+      }
+      if (raw === null || raw === lastSaved.current) return;
+      lastSaved.current = raw;
+      setData(load());
+    };
+    const onStorage = (e: StorageEvent) => e.key === STORAGE_KEY && resync();
+    const onVisible = () => document.visibilityState === "visible" && resync();
+    window.addEventListener("storage", onStorage);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ready]);
 
   /** Applies `fn` to a day, then normalises it: a day left with nothing in it is removed. */
   const updateDay = useCallback((key: string, fn: (d: DayEntry) => DayEntry) => {
