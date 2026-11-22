@@ -21,8 +21,9 @@ const notoKr = Noto_Sans_KR({
 });
 
 export const metadata: Metadata = {
-  title: "WEIGHT/LOG — 다이어트 데일리 트래커",
-  description: "체중 · 식단 · 운동 · 주사 · 컨디션을 하루 한 화면에 기록하는 개인용 다이어트 트래커",
+  title: "WEIGHT/LOG — 매일 쌓이는 나만의 몸 상태 아카이브",
+  description:
+    "체중 · 식단 · 운동 · 주사 · 컨디션을 매일 쌓아 가는 개인용 몸 상태 아카이브. 1kg 체크포인트와 데일리 스탬프로 진행을 확인해요.",
   applicationName: "WEIGHT/LOG",
   // app/manifest.json is linked automatically by Next.js
   appleWebApp: {

@@ -16,9 +16,10 @@ import {
   UtensilsCrossed,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import {
   appendNoteToken,
+  computeMilestones,
   fmtDays,
   hasDayRecord,
   injectionCycle,
@@ -29,6 +30,7 @@ import {
 } from "@/lib/store";
 import { shortLabel, todayKey, weekday } from "@/lib/date";
 import { MAIN_CATEGORIES, NOTE_MAX, NOTE_PRESETS, type Category, type DayEntry } from "@/lib/types";
+import { BadgeTile, badgeCount } from "./Achievements";
 import { Chip, Dot, Label } from "./ui";
 
 export const CATEGORY_ICONS: Record<Category, ComponentType<{ size?: number; strokeWidth?: number }>> = {
@@ -81,6 +83,9 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
   const shots = n(["injection"]);
   const summaryA = `식단 ${meals}건 · 운동 ${workouts}건`;
   const summaryB = `컨디션 ${day?.note ? "기록함" : "—"} · 주사 ${shots ? "투약함" : "—"}`;
+  const milestones = useMemo(() => computeMilestones(store.data), [store.data]);
+  const badges = badgeCount(milestones);
+  const latestBadge = milestones.filter((m) => m.achieved && m.at).sort((a, b) => (a.at! < b.at! ? 1 : -1))[0];
   // Phones list only what was recorded; new entries come from the "오늘 기록" card above.
   const emptyMain = MAIN_CATEGORIES.filter((c) => !(day?.logs[c.key]?.length));
 
@@ -176,6 +181,26 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
         <NoteCell key={`note:${selected}`} store={store} selected={selected} />
         <LogColumn key={`injection:${selected}`} cat="injection" label="주사" store={store} selected={selected} wide />
       </div>
+
+      {/* Row 3: badges earned over the whole archive (12 cells: count + 11 badges, so every row fills) */}
+      <GroupCaption
+        letter="C"
+        title="성취 배지"
+        hint="기록이 쌓이면 자동으로 달성돼요"
+        summary={latestBadge ? `최근 · ${latestBadge.label}` : undefined}
+      />
+      <ul className="col-span-6 grid grid-cols-2 gap-[1.5px] bg-ink max-md:hidden sm:grid-cols-3 md:col-span-12 lg:grid-cols-6">
+        <li className="flex min-h-[4.25rem] flex-col justify-between bg-ink p-3 text-paper">
+          <Label className="!text-paper/60">달성</Label>
+          <span className="display-tight text-[2rem] text-acid">
+            {badges}
+            <span className="text-paper/40">/{milestones.length}</span>
+          </span>
+        </li>
+        {milestones.map((m) => (
+          <BadgeTile key={m.id} m={m} variant="cell" />
+        ))}
+      </ul>
     </div>
   );
 }

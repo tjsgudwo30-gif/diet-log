@@ -216,7 +216,7 @@ function EntryForm({
         save();
       }}
     >
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
+      <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-4 pb-4">
         {/* Category tabs (hidden while editing an existing line) */}
         {editCat ? (
           <p className="pb-3 font-mono text-[12px] text-ink/55">{CAT_LABEL[editCat]} 항목</p>

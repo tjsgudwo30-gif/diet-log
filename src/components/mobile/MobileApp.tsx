@@ -1,17 +1,18 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { animate, AnimatePresence, motion, useMotionValue, useTransform } from "framer-motion";
 import { ArrowLeft, ArrowRight, CalendarDays, LineChart, NotebookPen, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fromKey, todayKey, weekdayKo } from "@/lib/date";
+import { addDays, fromKey, shortLabel, todayKey, weekdayKo } from "@/lib/date";
 import type { DietStore } from "@/lib/store";
 import type { Category } from "@/lib/types";
 import { CalendarPopover } from "../CalendarPopover";
-import { PhoneSummary } from "../Hero";
-import { TrendChart } from "../TrendChart";
 import { Dot } from "../ui";
+import { BottomSheet, SheetScroll } from "./BottomSheet";
 import { EntrySheet, type SheetRequest } from "./EntrySheet";
 import { TodayFeed } from "./TodayFeed";
+import { TrendTab } from "./TrendTab";
+import { useSwipe } from "./useSwipe";
 
 type Tab = "today" | "trend";
 const SNACK_MS = 5000;
@@ -43,15 +44,26 @@ export function MobileApp({
   const [tab, setTab] = useState<Tab>("today");
 
   /* ---------- entry sheet (request kept while it animates out) ---------- */
-  const [sheet, setSheet] = useState<{ req: SheetRequest; n: number; open: boolean } | null>(null);
-  const openSheet = useCallback((req: SheetRequest) => {
-    onCalendarOpenChange(false);
-    setSheet((s) => ({ req, n: (s?.n ?? 0) + 1, open: true }));
-  }, [onCalendarOpenChange]);
+  const [sheet, setSheet] = useState<{
+    req: SheetRequest;
+    n: number;
+    open: boolean;
+  } | null>(null);
+  const openSheet = useCallback(
+    (req: SheetRequest) => {
+      onCalendarOpenChange(false);
+      setSheet((s) => ({ req, n: (s?.n ?? 0) + 1, open: true }));
+    },
+    [onCalendarOpenChange],
+  );
   const closeSheet = useCallback(() => setSheet((s) => (s ? { ...s, open: false } : s)), []);
 
   /* ---------- snackbar: confirmations + undo for deletes ---------- */
-  const [snack, setSnack] = useState<{ id: number; text: string; undo?: () => void } | null>(null);
+  const [snack, setSnack] = useState<{
+    id: number;
+    text: string;
+    undo?: () => void;
+  } | null>(null);
   const snackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showSnack = useCallback((text: string, undo?: () => void) => {
     if (snackTimer.current) clearTimeout(snackTimer.current);
@@ -62,7 +74,7 @@ export function MobileApp({
     () => () => {
       if (snackTimer.current) clearTimeout(snackTimer.current);
     },
-    []
+    [],
   );
 
   /**
@@ -98,25 +110,21 @@ export function MobileApp({
         store={store}
       />
 
-      <main className="px-4 pt-4 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1.5rem)]">
+      {/* bottom padding: tab bar (3.5rem) + home indicator + room so the last card clears the bar */}
+      <main className="px-4 pt-4 pb-[calc(3.5rem+env(safe-area-inset-bottom)+2.5rem)]">
         {tab === "today" ? (
-          <TodayFeed store={store} selected={selected} onOpen={openSheet} onRemoveLog={removeLog} onClearNote={clearNote} />
+          <SwipeDays selected={selected} onMove={onMove}>
+            <TodayFeed store={store} selected={selected} onOpen={openSheet} onRemoveLog={removeLog} onClearNote={clearNote} />
+          </SwipeDays>
         ) : (
-          <div className="space-y-4">
-            <div className="border-[1.5px] border-ink">
-              <PhoneSummary store={store} selected={selected} />
-            </div>
-            <div className="border-[1.5px] border-ink">
-              <TrendChart
-                store={store}
-                selected={selected}
-                onSelect={(k) => {
-                  onPick(k);
-                  switchTab("today");
-                }}
-              />
-            </div>
-          </div>
+          <TrendTab
+            store={store}
+            selected={selected}
+            onGoToDay={(k) => {
+              onPick(k);
+              switchTab("today");
+            }}
+          />
         )}
       </main>
 
@@ -194,65 +202,72 @@ function MobileHeader({
   const isToday = selected === todayKey();
 
   return (
-    <header className="sticky top-0 z-40 border-b-[1.5px] border-ink bg-paper pt-[env(safe-area-inset-top)]">
-      <div className="relative flex h-[52px] items-center gap-0.5 px-1">
-        <IconButton label="이전 날" onClick={() => onMove(-1)}>
-          <ArrowLeft size={20} strokeWidth={1.75} />
-        </IconButton>
-        <button
-          ref={trigger}
-          type="button"
-          aria-haspopup="dialog"
-          aria-expanded={calendarOpen}
-          aria-label={`${selected} — 달력 열기`}
-          onClick={() => onCalendarOpenChange(!calendarOpen)}
-          className={`flex h-11 min-w-0 flex-1 items-center justify-center gap-2 ${calendarOpen ? "bg-ink text-paper" : ""}`}
-        >
-          {isToday && <Dot tone="acid" />}
-          <span className="display-tight truncate text-[1.5rem]">
-            {d.getMonth() + 1}.{d.getDate()}
-          </span>
-          <span className="font-mono text-[12px] font-bold">{weekdayKo(selected)}</span>
-          <CalendarDays size={15} strokeWidth={1.75} className={calendarOpen ? "" : "text-ink/45"} />
-        </button>
-        <IconButton label="다음 날" onClick={() => onMove(1)}>
-          <ArrowRight size={20} strokeWidth={1.75} />
-        </IconButton>
-        <button
-          type="button"
-          onClick={onToday}
-          disabled={isToday}
-          aria-label={isToday ? "오늘" : "오늘로 이동"}
-          className="h-11 shrink-0 px-2.5 font-mono text-[11px] font-bold disabled:text-ink/30"
-        >
-          오늘
-        </button>
-        <IconButton label="설정 열기" onClick={onOpenSettings}>
-          <Settings2 size={20} strokeWidth={1.75} />
-        </IconButton>
-
-        <AnimatePresence>
-          {calendarOpen && (
-            <CalendarPopover
-              data={store.data}
-              selected={selected}
-              triggerRef={trigger}
-              onClose={close}
-              onPick={(k) => {
-                onPick(k);
-                close();
-              }}
-            />
-          )}
-        </AnimatePresence>
-      </div>
-    </header>
+    <>
+      <header className="sticky top-0 z-40 border-b-[1.5px] border-ink bg-paper pt-[env(safe-area-inset-top)]">
+        <div className="relative flex h-[52px] items-center gap-0.5 px-1">
+          <IconButton label="이전 날" onClick={() => onMove(-1)}>
+            <ArrowLeft size={20} strokeWidth={1.75} />
+          </IconButton>
+          <button
+            ref={trigger}
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={calendarOpen}
+            aria-label={`${selected} — 달력 열기`}
+            onClick={() => onCalendarOpenChange(!calendarOpen)}
+            className={`flex h-11 min-w-0 flex-1 items-center justify-center gap-2 ${calendarOpen ? "bg-ink text-paper" : ""}`}
+          >
+            {isToday && <Dot tone="acid" />}
+            <span className="display-tight truncate text-[1.5rem]">
+              {d.getMonth() + 1}.{d.getDate()}
+            </span>
+            <span className="font-mono text-[12px] font-bold">{weekdayKo(selected)}</span>
+            <CalendarDays size={15} strokeWidth={1.75} className={calendarOpen ? "" : "text-ink/45"} />
+          </button>
+          <IconButton label="다음 날" onClick={() => onMove(1)}>
+            <ArrowRight size={20} strokeWidth={1.75} />
+          </IconButton>
+          <button
+            type="button"
+            onClick={onToday}
+            disabled={isToday}
+            aria-label={isToday ? "오늘" : "오늘로 이동"}
+            className="h-11 shrink-0 px-2.5 font-mono text-[11px] font-bold disabled:text-ink/30"
+          >
+            오늘
+          </button>
+          <IconButton label="설정 열기" onClick={onOpenSettings}>
+            <Settings2 size={20} strokeWidth={1.75} />
+          </IconButton>
+        </div>
+      </header>
+      {/* Outside the sticky header: its stacking context would put the tab bar over the sheet */}
+      <BottomSheet open={calendarOpen} onClose={close} title="날짜 선택">
+        <SheetScroll>
+          <CalendarPopover
+            variant="sheet"
+            data={store.data}
+            selected={selected}
+            onClose={close}
+            onPick={(k) => {
+              onPick(k);
+              close();
+            }}
+          />
+        </SheetScroll>
+      </BottomSheet>
+    </>
   );
 }
 
 function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" aria-label={label} onClick={onClick} className="flex h-11 w-11 shrink-0 items-center justify-center active:bg-ink/10">
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className="flex h-11 w-11 shrink-0 items-center justify-center active:bg-ink/10"
+    >
       {children}
     </button>
   );
@@ -267,7 +282,10 @@ const TABS: { key: Tab; label: string; Icon: typeof NotebookPen }[] = [
 
 function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
   return (
-    <nav aria-label="화면 전환" className="fixed inset-x-0 bottom-0 z-40 border-t-[1.5px] border-ink bg-paper pb-[env(safe-area-inset-bottom)]">
+    <nav
+      aria-label="화면 전환"
+      className="fixed inset-x-0 bottom-0 z-40 border-t-[1.5px] border-ink bg-paper pb-[env(safe-area-inset-bottom)]"
+    >
       <div role="tablist" className="grid h-14 grid-cols-2">
         {TABS.map(({ key, label, Icon }) => {
           const on = tab === key;
@@ -288,5 +306,58 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
         })}
       </div>
     </nav>
+  );
+}
+
+/* ---------- Today feed: swipe left / right for the next / previous day ---------- */
+
+const PEEK_PX = 56;
+
+function SwipeDays({ selected, onMove, children }: { selected: string; onMove: (d: number) => void; children: React.ReactNode }) {
+  // `x` moves the feed with the finger (damped); `pull` drives the side hints.
+  const x = useMotionValue(0);
+  const pull = useMotionValue(0);
+  const prevHint = useTransform(pull, [0, PEEK_PX], [0, 1]);
+  const nextHint = useTransform(pull, [-PEEK_PX, 0], [1, 0]);
+  const spring = { type: "spring", stiffness: 420, damping: 38 } as const;
+
+  const swipe = useSwipe(
+    (dir) => {
+      onMove(dir);
+      // the new day slides in from the side the finger came from
+      x.set(dir * 44);
+      animate(x, 0, spring);
+    },
+    {
+      onDrag: (dx) => {
+        x.set(dx * 0.35);
+        pull.set(dx);
+      },
+      onEnd: (committed) => {
+        pull.set(0);
+        if (!committed) animate(x, 0, spring);
+      },
+    },
+  );
+  const label = (k: string) => `${shortLabel(k)} ${weekdayKo(k)}`;
+
+  return (
+    <div {...swipe} className="touch-pan-y">
+      <motion.div style={{ x }}>{children}</motion.div>
+      <motion.div
+        aria-hidden
+        style={{ opacity: prevHint }}
+        className="pointer-events-none fixed top-1/2 left-3 z-30 -translate-y-1/2 bg-ink px-3 py-2 font-mono text-[12px] font-bold text-paper"
+      >
+        ‹ {label(addDays(selected, -1))}
+      </motion.div>
+      <motion.div
+        aria-hidden
+        style={{ opacity: nextHint }}
+        className="pointer-events-none fixed top-1/2 right-3 z-30 -translate-y-1/2 bg-ink px-3 py-2 font-mono text-[12px] font-bold text-paper"
+      >
+        {label(addDays(selected, 1))} ›
+      </motion.div>
+    </div>
   );
 }

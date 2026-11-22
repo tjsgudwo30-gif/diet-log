@@ -32,16 +32,16 @@ import {
 } from "@/lib/store";
 import { MAIN_CATEGORIES, type AppData } from "@/lib/types";
 import { Syringe } from "lucide-react";
-import { AnimatedNumber, Cell, Dot, Label, useIsPhone } from "./ui";
+import { AnimatedNumber, Cell, Dot, Label } from "./ui";
 
-type Range = "7" | "30" | "all";
-const RANGES: { key: Range; label: string }[] = [
+export type Range = "7" | "30" | "all";
+export const RANGES: { key: Range; label: string }[] = [
   { key: "7", label: "7D" },
   { key: "30", label: "30D" },
   { key: "all", label: "ALL" },
 ];
 
-interface Point {
+export interface Point {
   key: string;
   weight: number | null;
   /** Trailing 7-day average (needs ≥ 3 weigh-ins in the window). */
@@ -71,7 +71,7 @@ function tooltipKey(p: TooltipContentProps<ValueType, NameType>): string | null 
   return isDateKey(p.label) ? p.label : null;
 }
 
-function buildSeries(data: AppData, selected: string, range: Range): Point[] {
+export function buildSeries(data: AppData, selected: string, range: Range): Point[] {
   const recorded = dayIndex(data).weights;
   let start: string;
   let end: string;
@@ -138,8 +138,8 @@ function Stat({ label, children, sub }: { label: string; children: ReactNode; su
   );
 }
 
-const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n).toFixed(1)}`;
-const trendTone = (n: number | null): "acid" | "blaze" | "ink" => (n === null || Math.abs(n) < 0.05 ? "ink" : n < 0 ? "acid" : "blaze");
+export const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n).toFixed(1)}`;
+export const trendTone = (n: number | null): "acid" | "blaze" | "ink" => (n === null || Math.abs(n) < 0.05 ? "ink" : n < 0 ? "acid" : "blaze");
 
 export const etaText = (eta: GoalEta | null): string => {
   if (!eta) return "목표 예상 —";
@@ -195,14 +195,6 @@ export function TrendChart({
 }) {
   const { data } = store;
   const [range, setRange] = useState<Range>("30");
-  const phone = useIsPhone();
-  /**
-   * Phones: a tap only inspects a point (tooltip + this bar); moving to that day is the
-   * explicit "이 날 보기" button, so tapping the chart never jumps the page.
-   * Remembered with the day it was picked on, so it lapses when the selected day changes.
-   */
-  const [picked, setPicked] = useState<{ key: string; on: string } | null>(null);
-  const pickedKey = picked && picked.on === selected && picked.key !== selected ? picked.key : null;
   const series = useMemo(() => buildSeries(data, selected, range), [data, selected, range]);
   // one pass over the series: weigh-ins (ascending) feed min/max, change, pace and the empty state
   const weighIns = useMemo(
@@ -219,20 +211,6 @@ export function TrendChart({
   const change = hasData ? last - first : 0;
 
   const goal = data.goalWeight;
-  // Y domain: cover every plotted value (weights *and* the 7-day average line, which can sit
-  // outside the weigh-in range at the edges), include the goal when it is within 1.5 kg of the
-  // data on either side, pad 0.5 kg, snap to whole kg, and never collapse below a 2 kg span.
-  const plotted = [...values, ...series.map((p) => p.ma7).filter((v): v is number => v !== null)];
-  const pMin = plotted.length ? Math.min(...plotted) : 0;
-  const pMax = plotted.length ? Math.max(...plotted) : 0;
-  const goalNear = goal >= pMin - 1.5 && goal <= pMax + 1.5;
-  let lo = Math.floor(Math.min(pMin, goalNear ? goal : pMin) - 0.5);
-  let hi = Math.ceil(Math.max(pMax, goalNear ? goal : pMax) + 0.5);
-  if (hi - lo < 2) {
-    const mid = (hi + lo) / 2;
-    lo = Math.floor(mid - 1);
-    hi = Math.ceil(mid + 1);
-  }
   const weekly = useMemo(() => weeklyStats(data, selected), [data, selected]);
   const injDays = series.filter((p) => p.inj).map((p) => p.key);
   const eta = pace.ok && hasData ? goalEta(last, goal, pace.perWeek) : null;
@@ -332,153 +310,173 @@ export function TrendChart({
           <PaceRow pace={pace} eta={eta} />
         </dl>
 
-        <div className="relative h-56 touch-pan-y px-1 pt-3 pb-2 md:h-[300px] md:px-3 md:pb-3 xl:h-[310px]">
+        <div className="relative h-[300px] px-3 pt-3 pb-3 xl:h-[310px]">
           {!hasData ? (
             <div className="flex h-full items-center justify-center font-mono text-[12px] text-ink/45">
               이 기간에 기록이 없습니다 · 설정에서 샘플 데이터를 채워 보세요
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={series}
-                margin={{ top: 12, right: phone ? 8 : 20, bottom: 0, left: 0 }}
-                onClick={(state) => {
-                  // only days that actually have something recorded — clicking the gap
-                  // between weigh-ins never lands on an empty day
-                  const k = resolveKey(state, series);
-                  if (!k || !hasDayRecord(data, k)) return;
-                  if (phone) setPicked({ key: k, on: selected });
-                  else onSelect(k);
-                }}
-              >
-                <XAxis
-                  dataKey="key"
-                  tickFormatter={shortLabel}
-                  axisLine={{ stroke: INK, strokeWidth: 1 }}
-                  tickLine={false}
-                  tick={AXIS_TICK}
-                  interval="preserveStartEnd"
-                  minTickGap={32}
-                  tickMargin={10}
-                />
-                <YAxis
-                  domain={[lo, hi]}
-                  axisLine={false}
-                  tickLine={false}
-                  width={phone ? 32 : 40}
-                  tickCount={phone ? 4 : 5}
-                  tick={AXIS_TICK}
-                  allowDecimals={false}
-                />
-                <ReferenceLine
-                  y={goal}
-                  stroke={INK}
-                  strokeOpacity={0.55}
-                  strokeWidth={1}
-                  strokeDasharray="1 4"
-                  ifOverflow="hidden"
-                  label={{
-                    value: `목표 ${goal.toFixed(1)}`,
-                    position: "insideBottomRight",
-                    fill: "rgba(0,0,0,0.55)",
-                    fontSize: 10.5,
-                    fontFamily: "var(--font-jetbrains)",
-                  }}
-                />
-                {/* injection days: faint orange guides, visible even on days without a weigh-in */}
-                {injDays.map((k) => (
-                  <ReferenceLine key={`inj-${k}`} x={k} stroke={BLAZE} strokeWidth={1} strokeOpacity={0.35} ifOverflow="hidden" />
-                ))}
-                <ReferenceLine x={selected} stroke={INK} strokeOpacity={0.35} strokeWidth={1} ifOverflow="hidden" />
-                <Line
-                  type="monotone"
-                  dataKey="ma7"
-                  stroke={INK}
-                  strokeWidth={1.5}
-                  strokeOpacity={0.35}
-                  strokeDasharray="3 4"
-                  dot={false}
-                  activeDot={false}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-                <Tooltip
-                  cursor={{ stroke: INK, strokeOpacity: 0.3, strokeWidth: 1 }}
-                  content={(p: TooltipContentProps<ValueType, NameType>) => (
-                    <ChartTooltip active={p.active} dayKey={tooltipKey(p)} data={data} compact={phone} />
-                  )}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="linear"
-                  dataKey="weight"
-                  stroke={INK}
-                  strokeWidth={2}
-                  connectNulls
-                  isAnimationActive={false}
-                  dot={(props: DotItemDotProps) => {
-                    const { cx, cy, payload, index } = props;
-                    if (typeof cx !== "number" || typeof cy !== "number" || !isPoint(payload) || payload.weight === null)
-                      return <g key={index} />;
-                    const sel = payload.key === selected;
-                    const dense = series.length > 40;
-                    if (payload.inj) {
-                      const r = sel ? 7 : dense ? 4 : 5;
-                      return <path key={index} d={diamond(cx, cy, r)} fill={sel ? ACID : BLAZE} stroke={INK} strokeWidth={1.5} />;
-                    }
-                    const s = sel ? 10 : dense ? 3 : 5;
-                    return (
-                      <rect
-                        key={index}
-                        x={cx - s / 2}
-                        y={cy - s / 2}
-                        width={s}
-                        height={s}
-                        fill={sel ? ACID : PAPER}
-                        stroke={INK}
-                        strokeWidth={sel ? 2 : 1.5}
-                      />
-                    );
-                  }}
-                  activeDot={(props: ActiveDotProps) => {
-                    const { cx, cy } = props;
-                    if (typeof cx !== "number" || typeof cy !== "number") return <g />;
-                    return <rect x={cx - 6} y={cy - 6} width={12} height={12} fill={INK} style={{ cursor: "pointer" }} />;
-                  }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <WeightPlot series={series} data={data} selected={selected} goal={goal} onPoint={onSelect} />
           )}
         </div>
       </div>
 
-      {/* Phones: move to a tapped point only on purpose */}
-      {phone && hasData && (
-        <div className="flex min-h-11 items-center justify-between gap-3 border-t border-ink/15 pl-4 font-mono text-[11px]">
-          {pickedKey ? (
-            <>
-              <span className="min-w-0 truncate">
-                {shortLabel(pickedKey)} {weekdayKo(pickedKey)}
-                {data.days[pickedKey]?.weight !== undefined && <b className="ml-2">{data.days[pickedKey].weight!.toFixed(1)}kg</b>}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  onSelect(pickedKey);
-                  setPicked(null);
-                }}
-                className="flex h-11 shrink-0 items-center bg-ink px-4 font-bold text-paper"
-              >
-                이 날 보기 →
-              </button>
-            </>
-          ) : (
-            <span className="text-ink/45">점을 눌러 그날 기록 확인</span>
-          )}
-        </div>
-      )}
     </Cell>
   );
+}
+
+/**
+ * The weight line chart itself: weigh-ins, 7-day average, goal line, injection days.
+ * Shared by the desktop card and the phone Trend tab (`compact`: tighter axes, small tooltip).
+ */
+export function WeightPlot({
+  series,
+  data,
+  selected,
+  goal,
+  compact = false,
+  onPoint,
+}: {
+  series: Point[];
+  data: AppData;
+  selected: string;
+  goal: number;
+  compact?: boolean;
+  /** A point on a day that has records was clicked / tapped. */
+  onPoint: (key: string) => void;
+}) {
+  const { lo, hi } = yDomain(series, goal);
+  const injDays = series.filter((p) => p.inj).map((p) => p.key);
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart
+        data={series}
+        margin={{ top: 12, right: compact ? 18 : 20, bottom: 0, left: compact ? 2 : 0 }}
+        onClick={(state) => {
+          // only days that actually have something recorded — clicking the gap
+          // between weigh-ins never lands on an empty day
+          const k = resolveKey(state, series);
+          if (k && hasDayRecord(data, k)) onPoint(k);
+        }}
+      >
+        <XAxis
+          dataKey="key"
+          tickFormatter={shortLabel}
+          axisLine={{ stroke: INK, strokeWidth: 1 }}
+          tickLine={false}
+          tick={AXIS_TICK}
+          interval="preserveStartEnd"
+          minTickGap={compact ? 26 : 32}
+          tickMargin={10}
+        />
+        <YAxis
+          domain={[lo, hi]}
+          axisLine={false}
+          tickLine={false}
+          width={compact ? 34 : 40}
+          tickCount={compact ? 4 : 5}
+          tick={AXIS_TICK}
+          allowDecimals={false}
+        />
+        <ReferenceLine
+          y={goal}
+          stroke={INK}
+          strokeOpacity={0.55}
+          strokeWidth={1}
+          strokeDasharray="1 4"
+          ifOverflow="hidden"
+          label={{
+            value: `목표 ${goal.toFixed(1)}`,
+            position: "insideBottomRight",
+            fill: "rgba(0,0,0,0.55)",
+            fontSize: 10.5,
+            fontFamily: "var(--font-jetbrains)",
+          }}
+        />
+        {/* injection days: faint orange guides, visible even on days without a weigh-in */}
+        {injDays.map((k) => (
+          <ReferenceLine key={`inj-${k}`} x={k} stroke={BLAZE} strokeWidth={1} strokeOpacity={0.35} ifOverflow="hidden" />
+        ))}
+        <ReferenceLine x={selected} stroke={INK} strokeOpacity={0.35} strokeWidth={1} ifOverflow="hidden" />
+        <Line
+          type="monotone"
+          dataKey="ma7"
+          stroke={INK}
+          strokeWidth={1.5}
+          strokeOpacity={0.35}
+          strokeDasharray="3 4"
+          dot={false}
+          activeDot={false}
+          connectNulls
+          isAnimationActive={false}
+        />
+        <Tooltip
+          cursor={{ stroke: INK, strokeOpacity: 0.3, strokeWidth: 1 }}
+          content={(p: TooltipContentProps<ValueType, NameType>) => (
+            <ChartTooltip active={p.active} dayKey={tooltipKey(p)} data={data} compact={compact} />
+          )}
+          isAnimationActive={false}
+        />
+        <Line
+          type="linear"
+          dataKey="weight"
+          stroke={INK}
+          strokeWidth={2}
+          connectNulls
+          isAnimationActive={false}
+          dot={(props: DotItemDotProps) => {
+            const { cx, cy, payload, index } = props;
+            if (typeof cx !== "number" || typeof cy !== "number" || !isPoint(payload) || payload.weight === null)
+              return <g key={index} />;
+            const sel = payload.key === selected;
+            const dense = series.length > 40;
+            if (payload.inj) {
+              const r = sel ? 7 : dense ? 4 : 5;
+              return <path key={index} d={diamond(cx, cy, r)} fill={sel ? ACID : BLAZE} stroke={INK} strokeWidth={1.5} />;
+            }
+            const s = sel ? 10 : dense ? 3 : 5;
+            return (
+              <rect
+                key={index}
+                x={cx - s / 2}
+                y={cy - s / 2}
+                width={s}
+                height={s}
+                fill={sel ? ACID : PAPER}
+                stroke={INK}
+                strokeWidth={sel ? 2 : 1.5}
+              />
+            );
+          }}
+          activeDot={(props: ActiveDotProps) => {
+            const { cx, cy } = props;
+            if (typeof cx !== "number" || typeof cy !== "number") return <g />;
+            return <rect x={cx - 6} y={cy - 6} width={12} height={12} fill={INK} style={{ cursor: "pointer" }} />;
+          }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * Y domain: cover every plotted value (weights *and* the 7-day average line, which can sit
+ * outside the weigh-in range at the edges), include the goal when it is within 1.5 kg of the
+ * data on either side, pad 0.5 kg, snap to whole kg, and never collapse below a 2 kg span.
+ */
+function yDomain(series: Point[], goal: number) {
+  const plotted = series.flatMap((p) => [p.weight, p.ma7]).filter((v): v is number => v !== null);
+  const pMin = plotted.length ? Math.min(...plotted) : 0;
+  const pMax = plotted.length ? Math.max(...plotted) : 0;
+  const goalNear = goal >= pMin - 1.5 && goal <= pMax + 1.5;
+  let lo = Math.floor(Math.min(pMin, goalNear ? goal : pMin) - 0.5);
+  let hi = Math.ceil(Math.max(pMax, goalNear ? goal : pMax) + 0.5);
+  if (hi - lo < 2) {
+    const mid = (hi + lo) / 2;
+    lo = Math.floor(mid - 1);
+    hi = Math.ceil(mid + 1);
+  }
+  return { lo, hi };
 }
 
 /** Minimal tooltip: date + weight, then injection / note / meals as plain rows. */

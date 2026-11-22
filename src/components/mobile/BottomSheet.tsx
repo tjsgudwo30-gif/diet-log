@@ -26,9 +26,28 @@ function useKeyboardInset(active: boolean) {
 }
 
 /**
+ * Page scroll lock shared by every open sheet (counted, so one sheet closing while another
+ * opens never unlocks too early). `overflow: hidden` on <html> stops wheel / desktop scroll;
+ * on touch screens the backdrop and the sheet frame are `touch-none`, so a drag that starts
+ * there can't scroll the page behind, while the sheet's own content area is `touch-pan-y`.
+ */
+let scrollLocks = 0;
+let savedOverflow = "";
+function lockScroll() {
+  if (scrollLocks++ === 0) {
+    savedOverflow = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+  }
+}
+function unlockScroll() {
+  if (--scrollLocks === 0) document.documentElement.style.overflow = savedOverflow;
+}
+
+/**
  * Generic phone bottom sheet: dimmed backdrop, slides up from the bottom, lifts above the
- * keyboard. Closes on backdrop tap, ✕, Esc, or dragging the handle down.
- * Children fill a flex column (the caller decides what scrolls and what stays pinned).
+ * keyboard. Closes on backdrop tap, ✕, Esc, or dragging the handle / title down.
+ * Children fill a flex column; whatever should scroll inside it gets `<SheetScroll>`
+ * (or `overflow-y-auto touch-pan-y overscroll-contain`).
  */
 export function BottomSheet({
   open,
@@ -55,11 +74,10 @@ export function BottomSheet({
       }
     };
     window.addEventListener("keydown", onKey, true);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    lockScroll();
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      document.body.style.overflow = prevOverflow;
+      unlockScroll();
       opener?.focus?.({ preventScroll: true });
     };
   }, [open, onClose]);
@@ -70,7 +88,7 @@ export function BottomSheet({
         <div className="fixed inset-0 z-[60]">
           <motion.div
             aria-hidden
-            className="absolute inset-0 bg-ink/45"
+            className="absolute inset-0 touch-none bg-ink/45"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -81,7 +99,7 @@ export function BottomSheet({
             role="dialog"
             aria-modal="true"
             aria-label={typeof title === "string" ? title : undefined}
-            className="absolute inset-x-0 flex max-h-[calc(100dvh-3rem)] flex-col border-t-[1.5px] border-ink bg-paper"
+            className="absolute inset-x-0 flex max-h-[calc(100dvh-3rem)] touch-none flex-col border-t-[1.5px] border-ink bg-paper"
             style={{ bottom: kb }}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
@@ -119,4 +137,9 @@ export function BottomSheet({
       )}
     </AnimatePresence>
   );
+}
+
+/** The scrolling part of a sheet (everything else in the sheet stays put). */
+export function SheetScroll({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain ${className}`}>{children}</div>;
 }

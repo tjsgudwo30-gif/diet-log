@@ -1,11 +1,24 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { NotebookPen, Plus, X } from "lucide-react";
-import type { ComponentType } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronDown, NotebookPen, Plus, X } from "lucide-react";
+import { useMemo, useState, type ComponentType } from "react";
 import { shortLabel, todayKey } from "@/lib/date";
-import { dayIndex, goalProgress, lastInjection, prevWeight, type DietStore } from "@/lib/store";
-import type { Category } from "@/lib/types";
+import {
+  checkpointProgress,
+  computeMilestones,
+  computeStreak,
+  dailyHeadline,
+  dayIndex,
+  dayStamp,
+  goalProgress,
+  lastInjection,
+  latestWeight,
+  prevWeight,
+  type DietStore,
+} from "@/lib/store";
+import type { AppData, Category } from "@/lib/types";
+import { BadgeTile, badgeCount, BRAND, CheckpointGauge, HeadlineText, StampRow, TAGLINE } from "../Achievements";
 import { CATEGORY_ICONS } from "../DailyLog";
 import { AnimatedNumber, Dot, Label } from "../ui";
 import type { SheetRequest } from "./EntrySheet";
@@ -46,6 +59,7 @@ export function TodayFeed({
 
   return (
     <div className="space-y-4">
+      <IdentityCard data={data} selected={selected} />
       <WeightCard store={store} selected={selected} onOpen={() => onOpen({ tab: "weight" })} />
 
       <section aria-label="하루 기록" className="divide-y divide-ink/15 border-[1.5px] border-ink">
@@ -87,7 +101,86 @@ export function TodayFeed({
           {day?.note && <Entry text={day.note} onEdit={() => onOpen({ tab: "note" })} onRemove={onClearNote} />}
         </Section>
       </section>
+
+      <BadgesCard data={data} />
     </div>
+  );
+}
+
+/* ---------- Identity bar: brand + streak, then the day's headline and stamp ---------- */
+
+function IdentityCard({ data, selected }: { data: AppData; selected: string }) {
+  const headline = dailyHeadline(data, selected);
+  const stamp = dayStamp(data, selected);
+  const streak = computeStreak(data);
+  const isToday = selected === todayKey();
+  return (
+    <section aria-label="오늘 한눈에" className="border-[1.5px] border-ink">
+      <div className="flex items-center justify-between gap-3 bg-ink px-4 py-3 text-paper">
+        <div className="min-w-0">
+          <p className="font-mono text-[12px] font-bold tracking-[0.08em]">{BRAND}</p>
+          <p className="truncate text-[11.5px] text-paper/60">{TAGLINE}</p>
+        </div>
+        <p className="flex shrink-0 items-baseline gap-1" aria-label={`연속 기록 ${streak}일`}>
+          <span className={`display-tight text-[2rem] ${streak > 0 ? "text-acid" : "text-paper/40"}`}>{streak}</span>
+          <span className="font-mono text-[10.5px] text-paper/60">일 연속</span>
+        </p>
+      </div>
+      <div className="space-y-3 p-4">
+        <HeadlineText headline={headline} />
+        <div>
+          <Label className="mb-1.5 block">{isToday ? "오늘 스탬프" : `${shortLabel(selected)} 스탬프`}</Label>
+          <StampRow stamp={stamp} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Badges: folded by default, the count always visible ---------- */
+
+function BadgesCard({ data }: { data: AppData }) {
+  const [open, setOpen] = useState(false);
+  const milestones = useMemo(() => computeMilestones(data), [data]);
+  const done = badgeCount(milestones);
+  const latest = milestones
+    .filter((m) => m.achieved && m.at)
+    .sort((a, b) => (a.at! < b.at! ? 1 : -1))[0];
+  return (
+    <section aria-label="성취 배지" className="border-[1.5px] border-ink">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-h-14 w-full items-center gap-3 px-4 text-left active:bg-ink/5"
+      >
+        <Label>성취 배지</Label>
+        <b className="font-mono text-[14px] tabular-nums">
+          {done}
+          <span className="text-ink/40">/{milestones.length}</span>
+        </b>
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink/50">
+          {latest ? `최근 · ${latest.label}` : "기록이 쌓이면 자동으로 달성돼요"}
+        </span>
+        <ChevronDown size={18} strokeWidth={1.75} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.ul
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="grid grid-cols-2 gap-2 overflow-hidden px-4"
+          >
+            {milestones.map((m) => (
+              <BadgeTile key={m.id} m={m} />
+            ))}
+            <li aria-hidden className="col-span-2 h-2" />
+          </motion.ul>
+        )}
+      </AnimatePresence>
+    </section>
   );
 }
 
@@ -104,6 +197,8 @@ function WeightCard({ store, selected, onOpen }: { store: DietStore; selected: s
   const isToday = selected === todayKey();
   const firstRun = dayIndex(data).weights.length === 0;
   const up = delta !== null && delta > 0.04;
+  // checkpoints follow the latest known weight, so a day without a weigh-in still shows the path
+  const cp = checkpointProgress(data, weight ?? latestWeight(data, selected));
 
   return (
     <motion.button
@@ -158,6 +253,11 @@ function WeightCard({ store, selected, onOpen }: { store: DietStore; selected: s
           </div>
         </div>
       </div>
+      {cp && (
+        <div className={`border-t border-ink/15 px-4 py-3 ${cp.reached ? "bg-acid/25" : ""}`}>
+          <CheckpointGauge cp={cp} />
+        </div>
+      )}
     </motion.button>
   );
 }

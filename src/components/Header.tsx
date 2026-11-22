@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, CalendarDays, Settings2 } from "lucide-react";
 import { useCallback, useRef } from "react";
 import { fromKey, todayKey, weekday } from "@/lib/date";
 import type { AppData } from "@/lib/types";
+import { TAGLINE } from "./Achievements";
 import { CalendarPopover } from "./CalendarPopover";
 import { AnimatedNumber, Dot, Label } from "./ui";
 
@@ -52,7 +53,7 @@ export function Header({
         <div className="flex flex-col gap-1 lg:flex-row lg:items-baseline lg:gap-3">
           <span className="flex items-baseline gap-2">
             <span className="font-mono text-[12px] font-bold tracking-[0.08em]">WEIGHT/LOG</span>
-            <Label className="hidden sm:inline">Diet daily tracker</Label>
+            <span className="hidden text-[12px] text-ink/60 sm:inline">{TAGLINE}</span>
           </span>
           {/* what this app records — read before the big date */}
           <ul aria-label="기록 항목" className="flex flex-wrap items-center gap-x-1.5 font-mono text-[11px] text-ink/55">

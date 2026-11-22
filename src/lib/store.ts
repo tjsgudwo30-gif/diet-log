@@ -686,3 +686,190 @@ export function latestRecordKey(data: AppData): string | null {
   const i = lastIndexBefore(keys, todayKey());
   return keys[i] ?? keys[keys.length - 1] ?? null;
 }
+
+/* ---------- Achievements: checkpoints, day stamp, badges, headline (pure, from AppData) ---------- */
+
+/** One checkpoint per this many kg lost, counted from the starting (first recorded) weight. */
+export const CHECKPOINT_STEP = 1;
+
+export interface CheckpointProgress {
+  /** First recorded weight and the goal. */
+  start: number;
+  goal: number;
+  current: number;
+  /** Checkpoints between start and goal: start−1, start−2, … and the goal itself as the last one. */
+  totalCheckpoints: number;
+  clearedCount: number;
+  /** Weight of the next checkpoint; null once the goal is reached. */
+  nextTarget: number | null;
+  /** kg still to lose to reach `nextTarget` (null once the goal is reached). */
+  remainingToCheckpoint: number | null;
+  /** kg lost from the start (negative = above the start). */
+  lost: number;
+  reached: boolean;
+}
+
+/**
+ * 1 kg checkpoints from the starting weight down to the goal.
+ * null when there is no weight yet or the start is not above the goal (nothing to count down).
+ */
+export function checkpointProgress(data: AppData, current: number | undefined): CheckpointProgress | null {
+  const startKey = dayIndex(data).weights[0];
+  if (!startKey || current === undefined) return null;
+  const start = data.days[startKey].weight!;
+  const goal = data.goalWeight;
+  const total = start - goal;
+  if (total <= 0.05) return null;
+  const n = Math.ceil(total / CHECKPOINT_STEP - 1e-9);
+  const lost = round1(start - current);
+  const reached = current <= goal + 1e-9;
+  // the goal itself is the last checkpoint, so only the goal clears it
+  const cleared = reached ? n : Math.min(n - 1, Math.max(0, Math.floor(lost / CHECKPOINT_STEP + 1e-9)));
+  const nextTarget = reached ? null : round1(Math.max(goal, start - (cleared + 1) * CHECKPOINT_STEP));
+  return {
+    start,
+    goal,
+    current,
+    totalCheckpoints: n,
+    clearedCount: cleared,
+    nextTarget,
+    remainingToCheckpoint: nextTarget === null ? null : Math.max(0, round1(current - nextTarget)),
+    lost,
+    reached,
+  };
+}
+
+export interface DayStamp {
+  weight: boolean;
+  /** Breakfast, lunch, dinner or snack. */
+  meal: boolean;
+  /** Exercise, injection or a condition note. */
+  activity: boolean;
+  filled: number;
+  total: 3;
+  /** All three parts filled. */
+  complete: boolean;
+}
+
+/** How complete a day's record is: weight · meal · activity/condition. */
+export function dayStamp(data: AppData, key: string): DayStamp {
+  const d = data.days[key];
+  const has = (c: Category) => (d?.logs[c]?.length ?? 0) > 0;
+  const weight = d?.weight !== undefined;
+  const meal = has("breakfast") || has("lunch") || has("dinner") || has("snack");
+  const activity = has("exercise") || has("injection") || !!d?.note;
+  const filled = Number(weight) + Number(meal) + Number(activity);
+  return { weight, meal, activity, filled, total: 3, complete: filled === 3 };
+}
+
+export interface Milestone {
+  id: string;
+  label: string;
+  /** What it takes (shown while not achieved) or what it was. */
+  hint: string;
+  achieved: boolean;
+  /** Day it was first reached, when that is a single day. */
+  at?: string;
+}
+
+/** Badges earned over the whole archive, in the order they are usually reached. */
+export function computeMilestones(data: AppData): Milestone[] {
+  const { all, weights, injections } = dayIndex(data);
+  const recorded = all.filter((k) => hasAnything(data.days[k]));
+
+  // first day each consecutive-record streak length is reached
+  const streakAt: Record<number, string> = {};
+  let run = 0;
+  for (let i = 0; i < recorded.length; i++) {
+    run = i > 0 && diffDays(recorded[i - 1], recorded[i]) === 1 ? run + 1 : 1;
+    if (!streakAt[run]) streakAt[run] = recorded[i];
+  }
+
+  // first day each amount of loss (from the starting weight) is reached
+  const start = weights.length ? data.days[weights[0]].weight! : undefined;
+  const lossAt = (kg: number) =>
+    start === undefined ? undefined : weights.find((k) => start - data.days[k].weight! >= kg - 1e-9);
+  const goalAt =
+    start !== undefined && start - data.goalWeight > 0.05
+      ? weights.find((k) => data.days[k].weight! <= data.goalWeight + 1e-9)
+      : undefined;
+  const stampAt = recorded.find((k) => dayStamp(data, k).complete);
+
+  // trend over the last 30 days of weigh-ins
+  const lastW = weights[weights.length - 1];
+  const from = lastW ? addDays(lastW, -29) : "";
+  const pace = weightPace(weights.filter((k) => k >= from).map((k) => ({ key: k, weight: data.days[k].weight! })));
+  const falling = pace.ok && pace.perWeek <= -0.1;
+
+  const m = (id: string, label: string, hint: string, at: string | undefined): Milestone => ({
+    id,
+    label,
+    hint,
+    achieved: !!at,
+    at,
+  });
+  return [
+    m("first", "첫 기록 시작", "아무 기록이나 하나 남기기", recorded[0]),
+    m("streak3", "3일 연속 기록", "3일 이어서 기록하기", streakAt[3]),
+    m("streak7", "7일 연속 기록", "일주일 이어서 기록하기", streakAt[7]),
+    m("streak14", "14일 연속 기록", "2주 이어서 기록하기", streakAt[14]),
+    m("stamp", "첫 스탬프 완성", "하루에 체중·식단·활동 모두 기록", stampAt),
+    m("loss1", "첫 −1kg 감량", "시작 체중보다 1kg 줄이기", lossAt(1)),
+    m("loss3", "첫 −3kg 감량", "시작 체중보다 3kg 줄이기", lossAt(3)),
+    m("loss5", "첫 −5kg 감량", "시작 체중보다 5kg 줄이기", lossAt(5)),
+    {
+      id: "pace",
+      label: "주간 페이스 하락세",
+      hint: falling && pace.ok ? `최근 30일 −${Math.abs(pace.perWeek).toFixed(1)}kg/주` : "최근 30일 추세가 내려가면 달성",
+      achieved: falling,
+    },
+    m("inj4", "주사 4회 기록", "투약 기록 4회", injections[3]),
+    m("goal", "목표 체중 도달", `목표 ${data.goalWeight.toFixed(1)}kg`, goalAt),
+  ];
+}
+
+export interface Headline {
+  text: string;
+  tone: "good" | "warn" | "neutral";
+}
+
+/** One plain sentence about the selected day: change, checkpoint, streak or what is still missing. */
+export function dailyHeadline(data: AppData, key: string): Headline {
+  const day = data.days[key];
+  const isToday = key === todayKey();
+  const streak = isToday ? computeStreak(data) : 0;
+  const tail = streak >= 2 ? ` · 연속 ${streak}일째` : "";
+
+  if (!Object.values(data.days).some(hasAnything)) {
+    return { text: "첫 체중을 남기면 나만의 아카이브가 시작돼요.", tone: "neutral" };
+  }
+
+  const w = day?.weight;
+  if (w === undefined) {
+    const inj = lastInjection(data, key, { strict: true });
+    const injectedHere = (day?.logs.injection?.length ?? 0) > 0;
+    if (isToday && inj && !injectedHere && inj.daysAgo >= 7) {
+      return { text: `오늘은 투약 예정일이에요 (D+${inj.daysAgo})${tail}`, tone: "warn" };
+    }
+    if (isToday) return { text: `아직 오늘 체중이 없어요. 공복 체중부터 남겨 보세요${tail}`, tone: "neutral" };
+    return { text: hasAnything(day) ? "이 날은 체중 없이 기록만 남았어요." : "이 날은 기록이 없어요.", tone: "neutral" };
+  }
+
+  const prev = prevWeight(data, key);
+  const cp = checkpointProgress(data, w);
+  const cpPrev = prev ? checkpointProgress(data, prev.weight) : null;
+  if (cp?.reached && cpPrev && !cpPrev.reached) {
+    return { text: `목표 체중 ${data.goalWeight.toFixed(1)}kg 도달. 이제는 유지가 목표예요${tail}`, tone: "good" };
+  }
+  if (cp && cpPrev && cp.clearedCount > cpPrev.clearedCount) {
+    const next = cp.nextTarget !== null ? ` 다음은 ${cp.nextTarget.toFixed(1)}kg` : "";
+    return { text: `체크포인트 −${cp.clearedCount}kg 통과.${next}${tail}`, tone: "good" };
+  }
+  if (!prev) return { text: `시작 체중 ${w.toFixed(1)}kg. 여기서부터 쌓아 가요${tail}`, tone: "neutral" };
+
+  const delta = round1(w - prev.weight);
+  const since = diffDays(prev.key, key) === 1 ? "어제보다" : "직전 기록보다";
+  if (delta <= -0.1) return { text: `${since} ${Math.abs(delta).toFixed(1)}kg 가벼워요${tail}`, tone: "good" };
+  if (delta >= 0.1) return { text: `${since} ${delta.toFixed(1)}kg 늘었어요. 하루 변동일 수 있어요${tail}`, tone: "warn" };
+  return { text: `${since} 같은 체중을 지켰어요${tail}`, tone: "neutral" };
+}

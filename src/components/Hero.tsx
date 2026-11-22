@@ -1,26 +1,25 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Minus, Plus, Trash2 } from "lucide-react";
+import { Minus, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
-import { addDays, shortLabel, todayKey, weekdayKo } from "@/lib/date";
+import { shortLabel, todayKey, weekdayKo } from "@/lib/date";
 import {
-  computeStreak,
+  checkpointProgress,
+  dailyHeadline,
   dayIndex,
+  dayStamp,
   fmtDays,
-  goalEta,
   goalProgress,
   injectionCycle,
   lastInjection,
   latestWeight,
   parseKg,
   prevWeight,
-  weeklyStats,
-  weightPace,
   type DietStore,
 } from "@/lib/store";
 import type { Category } from "@/lib/types";
-import { etaText } from "./TrendChart";
+import { CheckpointGauge, HeadlineText, StampRow } from "./Achievements";
 import { AnimatedNumber, Cell, Dot, Label } from "./ui";
 
 export function Hero({ store, selected }: { store: DietStore; selected: string }) {
@@ -73,6 +72,9 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
   const isToday = selected === todayKey();
   const firstRun = dayIndex(data).weights.length === 0;
   const progress = weight !== undefined ? goalProgress(data, weight) : null;
+  const checkpoint = weight !== undefined ? checkpointProgress(data, weight) : null;
+  const headline = dailyHeadline(data, selected);
+  const stamp = dayStamp(data, selected);
 
   // Day facts: meals / exercise / injection status / note — links the weight to the rest of the log
   const day = data.days[selected];
@@ -223,6 +225,12 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
               숫자를 눌러 첫 체중을 입력하면 기록이 시작됩니다. 둘러보려면 오른쪽 위 설정에서 샘플 데이터를 채워 보세요.
             </p>
           )}
+          {!firstRun && !editing && <HeadlineText headline={headline} className="mt-3 max-w-md" />}
+          {checkpoint && !editing && (
+            <div className={`mt-4 max-w-md ${checkpoint.reached ? "bg-acid/25 p-2" : ""}`}>
+              <CheckpointGauge cp={checkpoint} dense />
+            </div>
+          )}
 
           <div className="mt-5 hidden items-center gap-2 md:flex">
             <StepButton label="0.1kg 감소" onClick={() => nudge(-0.1)}>
@@ -299,6 +307,9 @@ export function Hero({ store, selected }: { store: DietStore; selected: string }
           </button>
         }
       >
+        <div className="px-5 pt-3 md:px-6">
+          <StampRow stamp={stamp} size="sm" />
+        </div>
         <ul className="grid flex-1 grid-cols-2 gap-px px-5 pt-3 pb-5 md:grid-cols-4 md:px-6 xl:grid-cols-1 xl:content-end xl:gap-0">
           {status.map((s) => (
             <li key={s.key} className="border-ink/10 py-2 xl:border-b xl:py-2.5 xl:last:border-b-0">
@@ -381,145 +392,5 @@ function GoalBar({
         <span>목표 {goal.toFixed(1)}</span>
       </div>
     </div>
-  );
-}
-
-const signedKg = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n).toFixed(1)}`;
-const toneOf = (n: number | null): "acid" | "blaze" | "ink" =>
-  n === null || Math.abs(n) < 0.05 ? "ink" : n < 0 ? "acid" : "blaze";
-
-/**
- * Phone-only summary: "목표까지" and "7일 평균" side by side; everything else
- * (change, pace, ETA, injection rhythm, streak) folded under "자세히 보기".
- */
-export function PhoneSummary({ store, selected }: { store: DietStore; selected: string }) {
-  const { data } = store;
-  const [open, setOpen] = useState(false);
-  const goal = data.goalWeight;
-  const weight = data.days[selected]?.weight;
-  const current = latestWeight(data, selected);
-  const toGoal = current !== undefined ? current - goal : undefined;
-  const progress = current !== undefined ? goalProgress(data, current) : null;
-  const weekly = weeklyStats(data, selected);
-
-  const prev = prevWeight(data, selected);
-  const delta = weight !== undefined && prev ? weight - prev.weight : null;
-  // pace over the 30 days ending at the selected day (same rule as the chart's 30D view)
-  const from = addDays(selected, -29);
-  const pace = weightPace(
-    dayIndex(data)
-      .weights.filter((k) => k >= from && k <= selected)
-      .map((k) => ({ key: k, weight: data.days[k].weight! }))
-  );
-  const eta = pace.ok && current !== undefined ? goalEta(current, goal, pace.perWeek) : null;
-  const lastInj = lastInjection(data, selected);
-  const cycle = injectionCycle(data, selected);
-  const streak = computeStreak(data);
-
-  const rows: { label: string; value: string; warn?: boolean }[] = [
-    {
-      label: "직전 기록 대비",
-      value: delta !== null && prev ? `${signedKg(delta)}kg · ${shortLabel(prev.key)} ${prev.weight.toFixed(1)}` : "—",
-      warn: toneOf(delta) === "blaze",
-    },
-    {
-      label: "주간 페이스",
-      value: pace.ok ? `${signedKg(pace.perWeek)}kg/주 · 최근 30일` : "체중 기록 3회 이상 필요",
-      warn: pace.ok && toneOf(pace.perWeek) === "blaze",
-    },
-    { label: "목표 예상", value: pace.ok ? etaText(eta) : "—" },
-    {
-      label: "진행률",
-      value: progress
-        ? `${Math.round(progress.pct * 100)}% · 시작 ${progress.start.toFixed(1)} → ${goal.toFixed(1)}`
-        : `목표 ${goal.toFixed(1)}kg`,
-    },
-    {
-      label: "주사",
-      value: lastInj
-        ? `${lastInj.daysAgo === 0 ? "이 날 투약" : `D+${lastInj.daysAgo}`}${cycle.avgGap !== null ? ` · 평균 ${fmtDays(cycle.avgGap)} 주기` : ""}`
-        : "기록 없음",
-    },
-    { label: "연속 기록", value: `${streak}일` },
-  ];
-
-  return (
-    <section aria-label="요약">
-      <div className="grid grid-cols-2">
-        <div className="flex min-w-0 flex-col gap-2 border-r border-ink/15 p-4">
-          <Label>목표까지</Label>
-          <div className="flex items-end gap-1">
-            {toGoal === undefined ? (
-              <span className="display-tight text-[2.5rem] text-ink/20">—</span>
-            ) : toGoal <= 0 ? (
-              <span className="display-tight text-[2.5rem]">달성</span>
-            ) : (
-              <>
-                <AnimatedNumber value={toGoal} className="display-tight text-[2.5rem]" />
-                <span className="display-tight pb-1 text-lg text-ink/60">kg</span>
-              </>
-            )}
-          </div>
-          <div className="relative mt-auto h-1.5 bg-ink/10" aria-hidden>
-            <motion.div
-              className="absolute inset-y-0 left-0 bg-acid"
-              animate={{ width: `${(progress?.pct ?? 0) * 100}%` }}
-              transition={{ type: "spring", stiffness: 120, damping: 20 }}
-            />
-          </div>
-        </div>
-        <div className="flex min-w-0 flex-col gap-2 p-4">
-          <Label>7일 평균</Label>
-          <div className="flex items-end gap-1">
-            {weekly.current ? (
-              <>
-                <AnimatedNumber value={weekly.current.avg} className="display-tight text-[2.5rem]" />
-                <span className="display-tight pb-1 text-lg text-ink/60">kg</span>
-              </>
-            ) : (
-              <span className="display-tight text-[2.5rem] text-ink/20">—</span>
-            )}
-          </div>
-          <span className="mt-auto flex items-center gap-1.5 font-mono text-[11px] text-ink/55">
-            {weekly.delta !== null ? (
-              <>
-                <Dot tone={toneOf(weekly.delta)} />
-                지난주 대비 {signedKg(weekly.delta)}
-              </>
-            ) : (
-              "비교할 기록 없음"
-            )}
-          </span>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-11 w-full items-center justify-between border-t border-ink/15 px-4 font-mono text-[11px] font-bold"
-      >
-        {open ? "접기" : "자세히 보기"}
-        <ChevronDown size={16} strokeWidth={2} className={`transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.dl
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden px-4"
-          >
-            {rows.map((r) => (
-              <div key={r.label} className="flex items-baseline justify-between gap-4 border-t border-ink/10 py-3 font-mono text-[12px]">
-                <dt className="shrink-0 text-ink/55">{r.label}</dt>
-                <dd className={`min-w-0 text-right tabular-nums ${r.warn ? "text-blaze" : ""}`}>{r.value}</dd>
-              </div>
-            ))}
-          </motion.dl>
-        )}
-      </AnimatePresence>
-    </section>
   );
 }

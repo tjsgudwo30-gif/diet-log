@@ -7,6 +7,7 @@ import { addDays, fromKey, shortLabel, toKey, todayKey } from "@/lib/date";
 import { hasDayRecord, hasInjection, latestRecordKey } from "@/lib/store";
 import type { AppData } from "@/lib/types";
 import { Label } from "./ui";
+import { useSwipe } from "./mobile/useSwipe";
 
 const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -21,7 +22,9 @@ function monthGrid(year: number, month: number): (string | null)[] {
 }
 
 /**
- * Month calendar popover anchored under the date navigation.
+ * Month calendar. `variant="popover"` (desktop): anchored under the date navigation.
+ * `variant="sheet"` (phones): plain content for a bottom sheet, bigger touch cells,
+ * swipe left/right to change month; the sheet owns closing.
  * - Days with any record get an ink dot; injection days an orange dot.
  * - Click a day → select it and close. Esc / outside click / ✕ close.
  * - Focus moves to the selected day on open and back to the trigger on close.
@@ -32,13 +35,16 @@ export function CalendarPopover({
   onPick,
   onClose,
   triggerRef,
+  variant = "popover",
 }: {
   data: AppData;
   selected: string;
   onPick: (key: string) => void;
   onClose: () => void;
-  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  variant?: "popover" | "sheet";
 }) {
+  const sheet = variant === "sheet";
   const sel = fromKey(selected);
   const [view, setView] = useState({ y: sel.getFullYear(), m: sel.getMonth() });
   /** Roving-tabindex focus target inside the grid (moves with the arrow keys). */
@@ -99,8 +105,10 @@ export function CalendarPopover({
   }, [focusKey, view]);
 
   // Esc + outside click close; focus the selected day on open, return focus on close.
+  // (In a sheet, the sheet handles Esc / backdrop / focus return.)
   useEffect(() => {
-    const trigger = triggerRef.current;
+    if (sheet) return;
+    const trigger = triggerRef?.current;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -130,28 +138,20 @@ export function CalendarPopover({
       document.removeEventListener("touchstart", onDown);
       trigger?.focus();
     };
-  }, [onClose, triggerRef]);
+  }, [onClose, triggerRef, sheet]);
 
-  return (
-    // Outer wrapper does the centring transform; the inner motion layer animates freely.
-    <div className="absolute top-full left-1/2 z-50 mt-2 w-[min(21rem,calc(100vw-1.5rem))] -translate-x-1/2">
-      <motion.div
-        ref={panelRef}
-        role="dialog"
-        aria-label="기록 날짜 달력"
-        initial={{ opacity: 0, y: -6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -6 }}
-        transition={{ duration: 0.14 }}
-        className="border-[1.5px] border-ink bg-paper shadow-[0_24px_60px_-24px_rgba(0,0,0,0.4)]"
-      >
+  // Phones: horizontal swipe on the grid flips the month.
+  const swipe = useSwipe((dir) => shift(dir));
+
+  const content = (
+    <>
         {/* Month bar */}
         <div className="flex items-center justify-between gap-2 border-b border-ink/15 px-3 py-2">
           <button
             type="button"
             aria-label="이전 달"
             onClick={() => shift(-1)}
-            className="flex h-9 w-9 items-center justify-center hover:bg-ink hover:text-paper"
+            className={`flex items-center justify-center hover:bg-ink hover:text-paper ${sheet ? "h-11 w-11" : "h-9 w-9"}`}
           >
             <ChevronLeft size={18} strokeWidth={1.75} />
           </button>
@@ -165,7 +165,7 @@ export function CalendarPopover({
             type="button"
             aria-label="다음 달"
             onClick={() => shift(1)}
-            className="flex h-9 w-9 items-center justify-center hover:bg-ink hover:text-paper"
+            className={`flex items-center justify-center hover:bg-ink hover:text-paper ${sheet ? "h-11 w-11" : "h-9 w-9"}`}
           >
             <ChevronRight size={18} strokeWidth={1.75} />
           </button>
@@ -180,9 +180,15 @@ export function CalendarPopover({
               </span>
             ))}
           </div>
-          <div role="grid" aria-label="날짜 선택 · 방향키로 이동, Enter로 선택" onKeyDown={onGridKey} className="grid grid-cols-7">
+          <div
+            role="grid"
+            aria-label="날짜 선택 · 방향키로 이동, Enter로 선택"
+            onKeyDown={onGridKey}
+            {...(sheet ? swipe : {})}
+            className={`grid grid-cols-7 ${sheet ? "touch-pan-y" : ""}`}
+          >
             {cells.map((k, i) => {
-              if (!k) return <span key={`pad-${i}`} aria-hidden className="h-10" />;
+              if (!k) return <span key={`pad-${i}`} aria-hidden className={sheet ? "h-12" : "h-10"} />;
               const d = fromKey(k).getDate();
               const isSel = k === selected;
               const isToday = k === today;
@@ -201,7 +207,7 @@ export function CalendarPopover({
                   onFocus={() => setFocusKey(k)}
                   aria-label={`${k}${rec ? ", 기록 있음" : ""}${inj ? ", 주사" : ""}`}
                   onClick={() => onPick(k)}
-                  className={`relative flex h-10 flex-col items-center justify-center font-mono text-[13px] tabular-nums transition-colors ${
+                  className={`relative flex flex-col items-center justify-center font-mono tabular-nums transition-colors ${sheet ? "h-12 text-[15px]" : "h-10 text-[13px]"} ${
                     isSel ? "bg-ink text-paper" : rec ? "text-ink hover:bg-ink/10" : "text-ink/40 hover:bg-ink/5"
                   } ${isToday && !isSel ? "font-bold underline decoration-acid decoration-[3px] underline-offset-4" : ""}`}
                 >
@@ -222,7 +228,7 @@ export function CalendarPopover({
             <button
               type="button"
               onClick={() => onPick(today)}
-              className="px-2 py-2.5 font-bold underline-offset-4 hover:underline"
+              className={`px-2 font-bold underline-offset-4 hover:underline ${sheet ? "h-11" : "py-2.5"}`}
             >
               오늘로
             </button>
@@ -231,20 +237,22 @@ export function CalendarPopover({
                 type="button"
                 onClick={() => onPick(latest)}
                 title="가장 최근에 기록한 날로 이동"
-                className="px-2 py-2.5 text-ink/70 underline-offset-4 hover:text-ink hover:underline"
+                className={`px-2 text-ink/70 underline-offset-4 hover:text-ink hover:underline ${sheet ? "h-11" : "py-2.5"}`}
               >
                 최근 기록 {shortLabel(latest)}
               </button>
             )}
           </span>
-          <button
-            type="button"
-            aria-label="달력 닫기"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center hover:bg-ink hover:text-paper"
-          >
-            <X size={15} strokeWidth={1.75} />
-          </button>
+          {!sheet && (
+            <button
+              type="button"
+              aria-label="달력 닫기"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center hover:bg-ink hover:text-paper"
+            >
+              <X size={15} strokeWidth={1.75} />
+            </button>
+          )}
         </div>
 
         {/* Legend */}
@@ -258,8 +266,32 @@ export function CalendarPopover({
           <span className="flex items-center gap-1.5">
             <span className="h-[3px] w-3 bg-acid" /> 오늘
           </span>
-          <span className="ml-auto hidden sm:inline">방향키로 이동</span>
+          <span className="ml-auto hidden sm:inline">{sheet ? "좌우로 밀어 달 이동" : "방향키로 이동"}</span>
         </div>
+    </>
+  );
+
+  if (sheet) {
+    return (
+      <div ref={panelRef} aria-label="기록 날짜 달력" className="pb-[env(safe-area-inset-bottom)]">
+        {content}
+      </div>
+    );
+  }
+  return (
+    // Outer wrapper does the centring transform; the inner motion layer animates freely.
+    <div className="absolute top-full left-1/2 z-50 mt-2 w-[min(21rem,calc(100vw-1.5rem))] -translate-x-1/2">
+      <motion.div
+        ref={panelRef}
+        role="dialog"
+        aria-label="기록 날짜 달력"
+        initial={{ opacity: 0, y: -6 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -6 }}
+        transition={{ duration: 0.14 }}
+        className="border-[1.5px] border-ink bg-paper shadow-[0_24px_60px_-24px_rgba(0,0,0,0.4)]"
+      >
+        {content}
       </motion.div>
     </div>
   );

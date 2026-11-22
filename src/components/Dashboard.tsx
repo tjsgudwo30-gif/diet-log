@@ -1,15 +1,18 @@
 "use client";
 
+import { MotionConfig } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addDays, todayKey } from "@/lib/date";
 import { computeStreak, useDietStore } from "@/lib/store";
 import { DailyLog } from "./DailyLog";
 import { Header } from "./Header";
 import { Hero } from "./Hero";
-import { SettingsModal } from "./SettingsModal";
+import { BRAND, TAGLINE } from "./Achievements";
+import { SettingsBody, SettingsModal } from "./SettingsModal";
 import { TrendChart } from "./TrendChart";
 import { useIsPhone } from "./ui";
 import { MobileApp } from "./mobile/MobileApp";
+import { BottomSheet, SheetScroll } from "./mobile/BottomSheet";
 
 export function Dashboard() {
   const store = useDietStore();
@@ -92,7 +95,7 @@ export function Dashboard() {
 
   if (phone) {
     return (
-      <>
+      <MotionConfig reducedMotion="user">
         <MobileApp
           store={store}
           selected={selected}
@@ -103,12 +106,17 @@ export function Dashboard() {
           calendarOpen={calendarOpen}
           onCalendarOpenChange={setCalendarOpen}
         />
-        <SettingsModal open={settingsOpen} onClose={closeSettings} store={store} />
-      </>
+        <BottomSheet open={settingsOpen} onClose={closeSettings} title="설정">
+          <SheetScroll className="pb-[env(safe-area-inset-bottom)]">
+            <SettingsBody store={store} />
+          </SheetScroll>
+        </BottomSheet>
+      </MotionConfig>
     );
   }
 
   return (
+    <MotionConfig reducedMotion="user">
     <main className="mx-auto max-w-[1600px] p-5">
       <div className="bento grid-cols-6 md:grid-cols-12">
         <Header
@@ -128,7 +136,7 @@ export function Dashboard() {
       </div>
       <footer className="flex flex-col gap-1 px-1 pt-3 font-mono text-[10.5px] text-ink/50 md:flex-row md:justify-between">
         <span>
-          <b className="font-bold text-ink/70">WEIGHT/LOG</b> · 체중 · 식단 · 운동 · 주사 · 컨디션 다이어트 데일리 트래커
+          <b className="font-bold text-ink/70">{BRAND}</b> · {TAGLINE}
         </span>
         <span>
           <span className="hidden md:inline">← → 날짜 이동 · T 오늘 · </span>기록은 이 기기에만 저장돼요 (설정에서 백업)
@@ -136,5 +144,6 @@ export function Dashboard() {
       </footer>
       <SettingsModal open={settingsOpen} onClose={closeSettings} store={store} />
     </main>
+    </MotionConfig>
   );
 }
