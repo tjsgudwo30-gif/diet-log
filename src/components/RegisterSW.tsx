@@ -12,7 +12,17 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "dev";
  */
 export function RegisterSW() {
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
+    if (process.env.NODE_ENV !== "production") return;
+
+    // All records live in localStorage. When running as the installed home-screen app,
+    // ask the browser to mark this origin's storage persistent so it isn't evicted under
+    // storage pressure. (Only in standalone mode: some browsers prompt in a normal tab.)
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    if (standalone) navigator.storage?.persist?.().catch(() => {});
+
+    if (!("serviceWorker" in navigator)) return;
     const url = `/sw.js?v=${encodeURIComponent(APP_VERSION)}`;
     const register = () =>
       navigator.serviceWorker.register(url, { scope: "/", updateViaCache: "none" }).catch(() => {

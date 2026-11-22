@@ -14,13 +14,23 @@ const ASSET_LIMIT = 120; // hashed chunks/fonts/icons kept per build
 const SHELL_URL = "/";
 const PRECACHE = [SHELL_URL, "/manifest.json", "/icons/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
 
+/** Build files the shell HTML references directly: JS chunks, CSS, preloaded fonts. */
+const shellAssets = (html) => [...new Set(html.match(/\/_next\/static\/[\w\-.~%/]+/g) ?? [])];
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(SHELL_CACHE)
+    (async () => {
+      const shell = await caches.open(SHELL_CACHE);
       // cache: "reload" bypasses the HTTP cache so the shell matches this build
-      .then((c) => c.addAll(PRECACHE.map((u) => new Request(u, { cache: "reload" }))))
-      .then(() => self.skipWaiting())
+      await shell.addAll(PRECACHE.map((u) => new Request(u, { cache: "reload" })));
+      // Precache the shell's own JS/CSS too. Without them, an offline launch after the
+      // browser has evicted its HTTP cache only shows the static "LOADING" HTML.
+      // Kept in the shell cache (never trimmed); best-effort so one miss can't block install.
+      const res = await shell.match(SHELL_URL);
+      const assets = shellAssets(res ? await res.text() : "");
+      await Promise.allSettled(assets.map((u) => shell.add(u)));
+      await self.skipWaiting();
+    })()
   );
 });
 
