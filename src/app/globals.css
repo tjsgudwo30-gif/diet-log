@@ -51,6 +51,17 @@ body {
   .bento > * {
     background: var(--color-paper);
   }
+  /* Phones: the same cells as separate cards with breathing room instead of shared rules */
+  @media (max-width: 47.99rem) {
+    .bento {
+      gap: 1rem;
+      background: transparent;
+      border: 0;
+    }
+    .bento > * {
+      border: 1.5px solid var(--color-ink);
+    }
+  }
 }
 
 .display-tight {

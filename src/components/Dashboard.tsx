@@ -83,7 +83,8 @@ export function Dashboard() {
   }
 
   return (
-    <main className="mx-auto max-w-[1600px] p-2 pb-[calc(var(--quickbar-h,0px)+1.5rem)] transition-[padding] duration-200 sm:p-5 sm:pb-[calc(var(--quickbar-h,0px)+1.5rem)] md:pb-5">
+    <main className="mx-auto max-w-[1600px] overflow-x-clip px-4 pt-3 pb-6 md:p-5">
+      {/* Phones: one column of separate cards (see .bento in globals.css); md+: the bento grid */}
       <div className="bento grid-cols-6 md:grid-cols-12">
         <Header
           selected={selected}
@@ -99,19 +100,20 @@ export function Dashboard() {
           onCalendarOpenChange={setCalendarOpen}
           onPick={setSelected}
         />
+        {/* Phones only: the day's entry card right under the date bar */}
+        <QuickBar store={store} selected={selected} />
         <Hero store={store} selected={selected} />
         <TrendChart store={store} selected={selected} onSelect={selectFromChart} />
         <DailyLog store={store} selected={selected} pulse={pulse} />
       </div>
-      <footer className="flex flex-col gap-1 px-1 pt-3 font-mono text-[10.5px] text-ink/50 md:flex-row md:justify-between">
-        <span>
+      <footer className="flex flex-col gap-1 px-1 pt-4 font-mono text-[10.5px] text-ink/50 md:flex-row md:justify-between md:pt-3">
+        <span className="max-md:hidden">
           <b className="font-bold text-ink/70">WEIGHT/LOG</b> · 체중 · 식단 · 운동 · 주사 · 컨디션 다이어트 데일리 트래커
         </span>
         <span>
           <span className="hidden md:inline">← → 날짜 이동 · T 오늘 · </span>기록은 이 기기에만 저장돼요 (설정에서 백업)
         </span>
       </footer>
-      <QuickBar store={store} selected={selected} />
       <SettingsModal open={settingsOpen} onClose={closeSettings} store={store} />
     </main>
   );

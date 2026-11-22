@@ -48,7 +48,7 @@ export function Header({
   return (
     <>
       {/* Year / Month — the poster headline */}
-      <div className="relative col-span-4 flex flex-col justify-between gap-3 overflow-hidden px-5 pt-4 pb-3 md:col-span-5 md:px-6 md:pt-5 md:pb-4">
+      <div className="relative col-span-4 flex flex-col justify-between gap-3 overflow-hidden px-5 pt-4 pb-3 max-md:hidden md:col-span-5 md:px-6 md:pt-5 md:pb-4">
         <div className="flex flex-col gap-1 lg:flex-row lg:items-baseline lg:gap-3">
           <span className="flex items-baseline gap-2">
             <span className="font-mono text-[12px] font-bold tracking-[0.08em]">WEIGHT/LOG</span>
@@ -80,8 +80,8 @@ export function Header({
         </div>
       </div>
 
-      {/* Streak + settings */}
-      <div className="col-span-2 flex items-stretch md:col-span-3 md:col-start-10 md:row-start-1">
+      {/* Streak + settings (desktop; on phones the streak lives in the summary details) */}
+      <div className="col-span-2 flex items-stretch max-md:hidden md:col-span-3 md:col-start-10 md:row-start-1">
         <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 px-4 pt-4 pb-3 md:px-6 md:pt-5 md:pb-4">
           <Label>
             <span className="md:hidden">연속</span>
@@ -106,7 +106,7 @@ export function Header({
 
       {/* Date navigation */}
       <div
-        className={`relative col-span-6 flex flex-col justify-between gap-3 px-4 py-3 md:col-span-4 md:col-start-6 md:row-start-1 md:px-6 md:pt-5 md:pb-4 ${calendarOpen ? "z-50" : ""}`}
+        className={`relative col-span-6 flex flex-col justify-between gap-3 px-2 py-2 md:col-span-4 md:col-start-6 md:row-start-1 md:px-6 md:pt-5 md:pb-4 ${calendarOpen ? "z-50" : ""}`}
       >
         <div className="hidden items-center justify-between md:flex">
           <Label>기록 날짜</Label>
@@ -127,12 +127,16 @@ export function Header({
             aria-expanded={calendarOpen}
             aria-label={`${selected} — 달력 열기`}
             onClick={() => onCalendarOpenChange(!calendarOpen)}
-            className={`group flex min-h-11 flex-1 items-baseline justify-center gap-2 transition-colors ${
+            className={`group flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 overflow-hidden transition-colors md:items-baseline ${
               calendarOpen ? "bg-ink text-paper" : "hover:bg-ink/5"
             }`}
           >
-            <AnimatedNumber value={d.getDate()} decimals={0} className="display-tight text-[2.75rem] md:text-[3.25rem]" />
-            <span className="flex items-center gap-1.5 font-mono text-[11px] font-bold tracking-[0.12em]">
+            <span className="display-tight shrink-0 text-[clamp(1.25rem,6.5vw,1.75rem)] md:hidden">
+              {d.getMonth() + 1}.{d.getDate()}
+            </span>
+            <AnimatedNumber value={d.getDate()} decimals={0} className="display-tight text-[3.25rem] max-md:hidden" />
+            {/* very narrow phones keep just the date */}
+            <span className="flex items-center gap-1.5 font-mono text-[11px] font-bold tracking-[0.12em] max-[359px]:hidden">
               {weekday(selected)}
               <CalendarDays size={14} strokeWidth={1.75} className={calendarOpen ? "" : "text-ink/50 group-hover:text-ink"} />
             </span>
@@ -140,12 +144,30 @@ export function Header({
           <NavButton label="다음 날" onClick={() => onMove(1)}>
             <ArrowRight size={20} strokeWidth={1.75} />
           </NavButton>
+          {/* Phones: today + settings join the same row */}
+          <button
+            type="button"
+            onClick={onToday}
+            disabled={isToday}
+            aria-label={isToday ? "오늘" : "오늘로 이동"}
+            className="flex h-11 w-11 shrink-0 items-center justify-center border border-ink bg-acid font-mono text-[11px] font-bold transition-colors disabled:border-ink/20 disabled:bg-transparent disabled:text-ink/35 md:hidden"
+          >
+            오늘
+          </button>
+          <button
+            type="button"
+            aria-label="설정 열기"
+            onClick={onOpenSettings}
+            className="flex h-11 w-11 shrink-0 items-center justify-center md:hidden"
+          >
+            <Settings2 size={20} strokeWidth={1.75} />
+          </button>
         </div>
         <button
           type="button"
           onClick={onToday}
           disabled={isToday}
-          className="-my-2 self-center px-3 py-2.5 font-mono text-[11px] uppercase tracking-[0.12em] underline md:my-0 md:py-0 decoration-ink/30 underline-offset-4 transition hover:decoration-ink disabled:no-underline disabled:opacity-35"
+          className="-my-2 self-center px-3 py-2.5 max-md:hidden font-mono text-[11px] uppercase tracking-[0.12em] underline md:my-0 md:py-0 decoration-ink/30 underline-offset-4 transition hover:decoration-ink disabled:no-underline disabled:opacity-35"
         >
           {isToday ? "오늘" : "← 오늘로 이동"}
         </button>
@@ -175,7 +197,7 @@ function NavButton({ label, onClick, children }: { label: string; onClick: () =>
       aria-label={label}
       onClick={onClick}
       whileTap={{ scale: 0.9 }}
-      className="flex h-11 w-11 items-center justify-center border border-ink/20 transition-colors hover:border-ink hover:bg-ink hover:text-paper"
+      className="flex h-11 w-11 shrink-0 items-center justify-center border border-ink/20 transition-colors hover:border-ink hover:bg-ink hover:text-paper"
     >
       {children}
     </motion.button>

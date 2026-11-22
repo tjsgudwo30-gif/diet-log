@@ -58,7 +58,7 @@ const EMPTY: Record<Category, string> = {
 /** Full-width group caption that splits the day into "what I ate / did" and "how I felt / dosed". */
 function GroupCaption({ letter, title, hint, summary }: { letter: string; title: string; hint: string; summary?: string }) {
   return (
-    <div className="col-span-6 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-0.5 bg-paper px-5 py-2.5 md:col-span-12 md:px-6">
+    <div className="col-span-6 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-0.5 bg-paper px-5 py-2.5 max-md:hidden md:col-span-12 md:px-6">
       <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
         <span className="font-mono text-[10.5px] font-bold">{letter}</span>
         <span className="text-[13px] font-bold">{title}</span>
@@ -81,10 +81,12 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
   const shots = n(["injection"]);
   const summaryA = `식단 ${meals}건 · 운동 ${workouts}건`;
   const summaryB = `컨디션 ${day?.note ? "기록함" : "—"} · 주사 ${shots ? "투약함" : "—"}`;
+  // Phones list only what was recorded; new entries come from the "오늘 기록" card above.
+  const emptyMain = MAIN_CATEGORIES.filter((c) => !(day?.logs[c.key]?.length));
 
   return (
-    <>
-      <div id="daily-log" className="relative col-span-6 scroll-mt-3 overflow-hidden md:col-span-12">
+    <div className="col-span-6 md:contents">
+      <div id="daily-log" className="relative col-span-6 scroll-mt-3 overflow-hidden bg-paper md:col-span-12">
         {/* thin sweep when arriving from the chart */}
         <motion.span
           key={pulse}
@@ -94,7 +96,7 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
           transition={{ duration: 0.8, ease: [0.7, 0, 0.3, 1] }}
           className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-acid"
         />
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 px-5 pt-4 pb-4 md:px-6 md:pt-5">
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 p-4 md:px-6 md:pt-5">
           <div>
             <Label className="flex items-center gap-2">
               <span className="text-ink">06</span>
@@ -102,14 +104,14 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
               <span>하루 기록</span>
             </Label>
             <h2 className="mt-2 flex flex-wrap items-baseline gap-x-3">
-              <span className="display-tight text-[clamp(2.25rem,5vw,3.25rem)]">Daily Log</span>
+              <span className="display-tight text-[1.75rem] md:text-[clamp(2.25rem,5vw,3.25rem)]">Daily Log</span>
               <AnimatePresence mode="popLayout" initial={false}>
                 <motion.span
                   key={selected}
                   initial={{ y: 12, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: -12, opacity: 0 }}
-                  className="display-tight text-[clamp(2.25rem,5vw,3.25rem)] text-ink/30"
+                  className="display-tight text-[1.75rem] text-ink/30 md:text-[clamp(2.25rem,5vw,3.25rem)]"
                 >
                   {shortLabel(selected)} {weekday(selected)}
                 </motion.span>
@@ -117,7 +119,7 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
             </h2>
           </div>
           <div className="flex flex-col gap-1.5 pb-1 md:items-end">
-            <p className="max-w-sm font-mono text-[11px] leading-relaxed text-ink/55 md:text-right">
+            <p className="max-w-sm font-mono text-[11px] leading-relaxed text-ink/55 max-md:hidden md:text-right">
               먹은 것과 움직인 것, 그리고 몸 상태와 투약을 하루 단위로 남깁니다. 항목을 누르면 바로 수정돼요.
             </p>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 md:justify-end">
@@ -154,20 +156,27 @@ export function DailyLog({ store, selected, pulse = 0 }: { store: DietStore; sel
       </div>
 
       <GroupCaption letter="A" title="식단 · 운동" hint="아침 → 점심 → 저녁 → 간식, 그리고 오늘 움직인 것" summary={summaryA} />
-      <div className="col-span-6 grid grid-cols-1 gap-[1.5px] bg-ink sm:grid-cols-2 md:col-span-12 lg:grid-cols-5">
+      <div className="col-span-6 grid grid-cols-1 gap-[1.5px] bg-ink max-md:border-t-[1.5px] max-md:border-ink sm:grid-cols-2 md:col-span-12 lg:grid-cols-5">
         {MAIN_CATEGORIES.map((c) => (
           // keyed by date: unsent input, tag drafts and tag-edit mode never leak into another day
           <LogColumn key={`${c.key}:${selected}`} cat={c.key} label={c.label} store={store} selected={selected} />
         ))}
+        {emptyMain.length > 0 && (
+          <p className="bg-paper px-4 py-3 font-mono text-[11px] leading-relaxed text-ink/45 sm:col-span-2 md:hidden">
+            {emptyMain.length === MAIN_CATEGORIES.length
+              ? "아직 식단·운동 기록이 없어요 · 위 '오늘 기록'에서 남겨 보세요"
+              : `기록 없음 · ${emptyMain.map((c) => c.label).join(" · ")}`}
+          </p>
+        )}
       </div>
 
       {/* Row 2: condition note + injection log */}
       <GroupCaption letter="B" title="컨디션 · 주사" hint="몸 상태 한 줄과 다이어트 주사 투약 기록" summary={summaryB} />
-      <div className="col-span-6 grid grid-cols-1 gap-[1.5px] bg-ink md:col-span-12 md:grid-cols-5">
+      <div className="col-span-6 grid grid-cols-1 gap-[1.5px] bg-ink max-md:border-t-[1.5px] max-md:border-ink md:col-span-12 md:grid-cols-5">
         <NoteCell key={`note:${selected}`} store={store} selected={selected} />
         <LogColumn key={`injection:${selected}`} cat="injection" label="주사" store={store} selected={selected} wide />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -295,7 +304,7 @@ function ClearDayControl({
 /** Column header shared by every log cell: icon + name, quiet count on the right. */
 function ColumnHeader({ icon, label, right, mark }: { icon: ReactNode; label: string; right?: ReactNode; mark?: ReactNode }) {
   return (
-    <div className="mx-5 flex items-center justify-between gap-3 border-b border-ink/10 pt-4 pb-2.5">
+    <div className="mx-4 flex items-center justify-between gap-3 border-b border-ink/10 pt-4 pb-2.5 md:mx-5">
       <div className="flex items-center gap-2">
         <span className="text-ink/70">{icon}</span>
         <span className="whitespace-nowrap text-[15px] font-bold">{label}</span>
@@ -383,7 +392,7 @@ function NoteCell({ store, selected }: { store: DietStore; selected: string }) {
         }
       />
 
-      <div className="flex flex-1 flex-col justify-center px-5 py-3">
+      <div className="flex flex-1 flex-col justify-center px-4 py-3 md:px-5">
         {editing ? (
           <form
             onSubmit={(e) => {
@@ -456,7 +465,7 @@ function NoteCell({ store, selected }: { store: DietStore; selected: string }) {
         )}
       </div>
 
-      <div className="px-5 pt-2 pb-5">
+      <div className="px-5 pt-2 pb-5 max-md:hidden">
         <div className="mb-2 flex min-h-5 items-center justify-between gap-2">
           <Label>Quick condition</Label>
           <AnimatePresence mode="wait">
@@ -667,7 +676,13 @@ function LogColumn({
   };
 
   return (
-    <section className={`flex flex-col bg-paper ${wide ? "md:col-span-2" : "md:min-h-[300px]"} ${cat === "exercise" ? "sm:col-span-2 lg:col-span-1" : ""}`}>
+    <section
+      id={isInj ? "log-injection" : undefined}
+      className={`flex scroll-mt-3 flex-col bg-paper ${wide ? "md:col-span-2" : "md:min-h-[300px]"} ${cat === "exercise" ? "sm:col-span-2 lg:col-span-1" : ""} ${
+        // phones: empty meal/exercise slots collapse into one "기록 없음" line
+        !isInj && !items.length ? "max-md:hidden" : ""
+      }`}
+    >
       <ColumnHeader
         icon={<Icon size={16} strokeWidth={1.75} />}
         label={label}
@@ -676,7 +691,7 @@ function LogColumn({
       />
 
       {isInj && (
-        <div className="mx-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-ink/10 py-2.5 font-mono text-[11px]">
+        <div className="mx-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-ink/10 py-2.5 font-mono text-[11px] md:mx-5">
           {last ? (
             <>
               <span className="min-w-0 truncate text-ink/55">
@@ -707,7 +722,7 @@ function LogColumn({
       )}
 
       {/* Entries */}
-      <ul className="flex-1 px-5 pt-1 font-mono text-[13px] leading-snug">
+      <ul className={`flex-1 px-4 pt-1 font-mono text-[13px] leading-snug md:px-5 ${isInj ? "" : "max-md:pb-3"}`}>
         <AnimatePresence initial={false}>
           {items.map((it) => (
             <motion.li
@@ -737,7 +752,7 @@ function LogColumn({
 
       {/* Input */}
       <form
-        className="mx-5 mt-2 flex items-stretch border-b border-ink/20 transition-colors focus-within:border-ink"
+        className={`mx-4 mt-2 flex items-stretch border-b border-ink/20 transition-colors focus-within:border-ink md:mx-5 ${isInj ? "" : "max-md:hidden"}`}
         onSubmit={(e) => {
           e.preventDefault();
           submit();
@@ -762,7 +777,7 @@ function LogColumn({
       </form>
 
       {/* Quick tags */}
-      <div className="px-5 pt-3 pb-5">
+      <div className={`px-4 pt-3 pb-5 md:px-5 ${isInj ? "" : "max-md:hidden"}`}>
         <div className="mb-2 flex items-center justify-between">
           <Label>{isInj ? "태그 · 한 기록에 합쳐짐" : "Quick tags"}</Label>
           <button

@@ -32,7 +32,7 @@ import {
 } from "@/lib/store";
 import { MAIN_CATEGORIES, type AppData } from "@/lib/types";
 import { Syringe } from "lucide-react";
-import { AnimatedNumber, Cell, Dot, Label } from "./ui";
+import { AnimatedNumber, Cell, Dot, Label, useIsPhone } from "./ui";
 
 type Range = "7" | "30" | "all";
 const RANGES: { key: Range; label: string }[] = [
@@ -141,7 +141,7 @@ function Stat({ label, children, sub }: { label: string; children: ReactNode; su
 const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n).toFixed(1)}`;
 const trendTone = (n: number | null): "acid" | "blaze" | "ink" => (n === null || Math.abs(n) < 0.05 ? "ink" : n < 0 ? "acid" : "blaze");
 
-const etaText = (eta: GoalEta | null): string => {
+export const etaText = (eta: GoalEta | null): string => {
   if (!eta) return "목표 예상 —";
   if (eta.kind === "reached") return "목표 체중 이하";
   if (eta.kind === "flat") return "목표 예상 —";
@@ -195,6 +195,14 @@ export function TrendChart({
 }) {
   const { data } = store;
   const [range, setRange] = useState<Range>("30");
+  const phone = useIsPhone();
+  /**
+   * Phones: a tap only inspects a point (tooltip + this bar); moving to that day is the
+   * explicit "이 날 보기" button, so tapping the chart never jumps the page.
+   * Remembered with the day it was picked on, so it lapses when the selected day changes.
+   */
+  const [picked, setPicked] = useState<{ key: string; on: string } | null>(null);
+  const pickedKey = picked && picked.on === selected && picked.key !== selected ? picked.key : null;
   const series = useMemo(() => buildSeries(data, selected, range), [data, selected, range]);
   // one pass over the series: weigh-ins (ascending) feed min/max, change, pace and the empty state
   const weighIns = useMemo(
@@ -239,7 +247,7 @@ export function TrendChart({
       label="체중 추이"
       className="col-span-6 md:col-span-12"
       right={
-        <div role="tablist" aria-label="기간" className="-my-1 flex gap-1">
+        <div role="tablist" aria-label="기간" className="-my-2 -mr-2 flex md:-my-1 md:mr-0 md:gap-1">
           {RANGES.map((r) => (
             <button
               key={r.key}
@@ -247,7 +255,7 @@ export function TrendChart({
               role="tab"
               aria-selected={range === r.key}
               onClick={() => setRange(r.key)}
-              className={`relative px-2.5 py-2.5 font-mono text-[11px] font-bold md:py-1.5 tracking-[0.08em] transition-colors ${
+              className={`relative h-11 min-w-11 px-3 font-mono text-[12px] font-bold tracking-[0.08em] transition-colors md:h-auto md:min-w-0 md:px-2.5 md:py-1.5 md:text-[11px] ${
                 range === r.key ? "text-ink" : "text-ink/40 hover:text-ink"
               }`}
             >
@@ -265,7 +273,7 @@ export function TrendChart({
       }
     >
       {/* Purpose + legend on one row: what the chart is for, what the marks mean */}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-5 pt-2 pb-3 font-mono text-[11px] text-ink/55 md:px-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-5 pt-2 pb-3 font-mono text-[11px] text-ink/55 max-md:hidden md:px-6">
         <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-ink">체중 변화 · 7일 평균 · 주사일을 한 화면에서</span>
           <span>
@@ -286,7 +294,7 @@ export function TrendChart({
 
       <div className="xl:grid xl:grid-cols-[21rem_1fr] xl:border-t xl:border-ink/15">
         {/* Summary strip: four figures side by side, hairline separated */}
-        <dl className="grid grid-cols-2 gap-px border-y border-ink/15 bg-ink/15 sm:grid-cols-4 xl:grid-cols-2 xl:grid-rows-[1fr_1fr_auto] xl:border-y-0 xl:border-r">
+        <dl className="grid grid-cols-2 gap-px border-y border-ink/15 bg-ink/15 max-md:hidden sm:grid-cols-4 xl:grid-cols-2 xl:grid-rows-[1fr_1fr_auto] xl:border-y-0 xl:border-r">
           <Stat label="최저 체중" sub={minKey && `${shortLabel(minKey)} 기록`}>
             <span className={big}>{hasData ? min.toFixed(1) : "—"}</span>
           </Stat>
@@ -324,7 +332,7 @@ export function TrendChart({
           <PaceRow pace={pace} eta={eta} />
         </dl>
 
-        <div className="relative h-[260px] px-1 pt-3 pb-3 md:h-[300px] md:px-3 xl:h-[310px]">
+        <div className="relative h-56 touch-pan-y px-1 pt-3 pb-2 md:h-[300px] md:px-3 md:pb-3 xl:h-[310px]">
           {!hasData ? (
             <div className="flex h-full items-center justify-center font-mono text-[12px] text-ink/45">
               이 기간에 기록이 없습니다 · 설정에서 샘플 데이터를 채워 보세요
@@ -333,12 +341,14 @@ export function TrendChart({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={series}
-                margin={{ top: 12, right: 20, bottom: 0, left: 0 }}
+                margin={{ top: 12, right: phone ? 8 : 20, bottom: 0, left: 0 }}
                 onClick={(state) => {
-                  // only jump to days that actually have something recorded — clicking the gap
-                  // between weigh-ins no longer lands on an empty day
+                  // only days that actually have something recorded — clicking the gap
+                  // between weigh-ins never lands on an empty day
                   const k = resolveKey(state, series);
-                  if (k && hasDayRecord(data, k)) onSelect(k);
+                  if (!k || !hasDayRecord(data, k)) return;
+                  if (phone) setPicked({ key: k, on: selected });
+                  else onSelect(k);
                 }}
               >
                 <XAxis
@@ -355,8 +365,8 @@ export function TrendChart({
                   domain={[lo, hi]}
                   axisLine={false}
                   tickLine={false}
-                  width={40}
-                  tickCount={5}
+                  width={phone ? 32 : 40}
+                  tickCount={phone ? 4 : 5}
                   tick={AXIS_TICK}
                   allowDecimals={false}
                 />
@@ -395,7 +405,7 @@ export function TrendChart({
                 <Tooltip
                   cursor={{ stroke: INK, strokeOpacity: 0.3, strokeWidth: 1 }}
                   content={(p: TooltipContentProps<ValueType, NameType>) => (
-                    <ChartTooltip active={p.active} dayKey={tooltipKey(p)} data={data} />
+                    <ChartTooltip active={p.active} dayKey={tooltipKey(p)} data={data} compact={phone} />
                   )}
                   isAnimationActive={false}
                 />
@@ -441,16 +451,68 @@ export function TrendChart({
           )}
         </div>
       </div>
+
+      {/* Phones: move to a tapped point only on purpose */}
+      {phone && hasData && (
+        <div className="flex min-h-11 items-center justify-between gap-3 border-t border-ink/15 pl-4 font-mono text-[11px]">
+          {pickedKey ? (
+            <>
+              <span className="min-w-0 truncate">
+                {shortLabel(pickedKey)} {weekdayKo(pickedKey)}
+                {data.days[pickedKey]?.weight !== undefined && <b className="ml-2">{data.days[pickedKey].weight!.toFixed(1)}kg</b>}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelect(pickedKey);
+                  setPicked(null);
+                }}
+                className="flex h-11 shrink-0 items-center bg-ink px-4 font-bold text-paper"
+              >
+                이 날 보기 →
+              </button>
+            </>
+          ) : (
+            <span className="text-ink/45">점을 눌러 그날 기록 확인</span>
+          )}
+        </div>
+      )}
     </Cell>
   );
 }
 
 /** Minimal tooltip: date + weight, then injection / note / meals as plain rows. */
-function ChartTooltip({ active, dayKey, data }: { active?: boolean; dayKey: string | null; data: AppData }) {
+function ChartTooltip({
+  active,
+  dayKey,
+  data,
+  compact = false,
+}: {
+  active?: boolean;
+  dayKey: string | null;
+  data: AppData;
+  compact?: boolean;
+}) {
   if (!active || !dayKey) return null;
   const day = data.days[dayKey];
   if (!day) return null;
   const injections = day.logs.injection ?? [];
+  if (compact) {
+    if (day.weight === undefined && !injections.length) return null;
+    return (
+      <div className="border border-ink bg-paper px-3 py-2 font-mono text-[11px] leading-snug">
+        <span className="text-ink/55">
+          {shortLabel(dayKey)} {weekdayKo(dayKey)}
+        </span>
+        <b className="ml-2 text-[13px]">{day.weight !== undefined ? `${day.weight.toFixed(1)}kg` : "—"}</b>
+        {injections.length > 0 && (
+          <span className="mt-0.5 flex items-center gap-1 text-blaze">
+            <Syringe size={11} strokeWidth={2} /> 주사
+          </span>
+        )}
+      </div>
+    );
+  }
   const items = MAIN_CATEGORIES.map((c) => ({ ...c, list: day.logs[c.key] ?? [] })).filter((c) => c.list.length);
   if (day.weight === undefined && !items.length && !injections.length && !day.note) return null;
   return (

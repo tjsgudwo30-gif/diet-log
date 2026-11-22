@@ -1,7 +1,18 @@
 "use client";
 
 import { motion, useSpring, useMotionValueEvent, type HTMLMotionProps } from "framer-motion";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+
+/* ---------- Viewport: below Tailwind's md breakpoint (the phone layout) ---------- */
+const PHONE_QUERY = "(max-width: 47.99rem)";
+const subscribePhone = (cb: () => void) => {
+  const m = window.matchMedia(PHONE_QUERY);
+  m.addEventListener("change", cb);
+  return () => m.removeEventListener("change", cb);
+};
+export function useIsPhone() {
+  return useSyncExternalStore(subscribePhone, () => window.matchMedia(PHONE_QUERY).matches, () => false);
+}
 
 /* ---------- Animated number: springs between values ---------- */
 export function AnimatedNumber({
@@ -92,7 +103,7 @@ export function Chip({
       {...rest}
       whileTap={{ scale: 0.95 }}
       transition={{ type: "spring", stiffness: 700, damping: 30 }}
-      className={`inline-flex h-9 shrink-0 select-none items-center gap-1 border px-2.5 font-mono text-[11px] transition-colors md:h-7 md:px-2 ${state} ${className}`}
+      className={`inline-flex h-10 shrink-0 select-none items-center gap-1 border px-2.5 font-mono text-[11px] transition-colors md:h-7 md:px-2 ${state} ${className}`}
     >
       {children}
     </motion.button>
@@ -123,7 +134,7 @@ export function Cell({
   return (
     <section className={`relative flex flex-col ${className}`}>
       {(index || label || right) && (
-        <header className="flex min-h-6 items-center justify-between gap-3 px-5 pt-4 md:px-6 md:pt-5">
+        <header className="flex min-h-6 items-center justify-between gap-3 px-4 pt-4 md:px-6 md:pt-5">
           <Label className="flex items-center gap-2">
             {index && <span className="text-ink">{index}</span>}
             {index && label && <span aria-hidden className="h-px w-4 bg-ink/30" />}
